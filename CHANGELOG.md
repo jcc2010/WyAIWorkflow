@@ -6,6 +6,13 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-01 — Measuring improvement (planned)
+- **What:** README "Measuring improvement" section and a log-rotation lesson; `REVIEWED.md`
+  measurement note updated. The scorecard itself is not built yet.
+- **Why:** outside feedback asked whether improvement is measured or judged by feel; the honest
+  answer was by feel for quality. Checking the cost data for a baseline found the report had been
+  reading only the live log file.
+
 ## 2026-11-01 — Changelog, budgets, review loop, sizing
 - **What:** this file and `REVIEWED.md`; a "Changing the workflow" section (proposal files, a
   fresh-subagent check of each change, a monthly deletion pass that only proposes);

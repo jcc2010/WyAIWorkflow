@@ -67,8 +67,33 @@ without firing mid-task.
   The checker now fails loudly in both cases.
 - `cmd | tail && git commit` commits even when `cmd` fails, because a pipeline returns its last
   command's status. Gate commits on the check's own exit status.
+- A cost report that reads only the live telemetry log silently covers just the time since the
+  last rotation: at 50 MB a file, about a day. A "30-day" report covered 3 hours. Read the
+  rotated backups too, print the range actually covered, and keep a monthly summary, because
+  the backups age out as well.
 - In zsh, an unquoted glob that matches nothing aborts the whole command with `no matches
   found`. That error means the search never ran. It does not mean "not found".
+
+## Measuring improvement
+
+Cost is measured; quality is not yet. Planned, not built: a monthly scorecard per project, read
+only from data that already exists, with one reading as a baseline and one a month after:
+
+- **Cost per shipped commit:** telemetry spend divided by non-merge commits on the integration
+  branch, plus the share of spend from requests over 400k context.
+- **Rework churn:** the share of a month's added lines changed or deleted again within 14 days.
+  Commit-subject regexes don't work when subjects describe the change rather than say "fix".
+- **Repeated traps:** fixes for a failure already recorded in the project's knowledge docs.
+- **Review hit rate:** how often the design critic says polish or rework, and findings per run
+  from the plan checker and the fresh reviewer. Each dispatch appends its verdict to a log;
+  without that, verdicts are read once and lost.
+
+Each reading is set beside the workflow changes that landed since the last one, which says only
+that they coincided, never that one caused the other. With one developer only large effects
+will show. The deletion pass can then test a removal: drop a rule and see whether the next
+month gets worse. The first baseline (three days, late Oct 2026): requests over 400k context
+were 17% of spend, and reopening a main session after more than an hour idle (a full cache
+rebuild) was 12%.
 
 ## Publishing
 

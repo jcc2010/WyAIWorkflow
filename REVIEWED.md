@@ -5,9 +5,9 @@ with the verdict and why. Check here before reviewing a source again; a re-revie
 the earlier verdict did not cover (a new version, a changed need). A verdict is about fit with
 this setup, not the quality of the source.
 
-**What is measured:** cost is (local OpenTelemetry plus a small report script; turns over 400k
-context were 29% of spend over three days in late Oct 2026). Quality is not: skill evals wait on
-`claude plugin eval` leaving early access. Until then an adoption is judged by feel and by
+**What is measured:** cost is, from local OpenTelemetry and a small report script. Quality is
+not yet: skill evals wait on `claude plugin eval` leaving early access, and a monthly scorecard
+(see the README) is planned, not built. Until it runs, an adoption is judged by feel and by
 recorded defects in each project's knowledge docs, not by a measured effect.
 
 ## 2026-11-01 — Reddit feedback #2 (review-loop hardening)
