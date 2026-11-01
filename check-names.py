@@ -13,7 +13,7 @@ CLAUDE.md mentions dev-workflow.md is found and checked too.
 Account plugins (enabled on claude.ai, no files on this Mac) print as UNVERIFIED and do not
 fail; any other unknown plugin is MISSING. BUILTIN is hand-kept: commands that ship with
 Claude Code and have no file to find."""
-import json, pathlib, re, subprocess, sys
+import json, pathlib, re, shutil, subprocess, sys
 
 HOME = pathlib.Path.home()
 WORKFLOW = pathlib.Path(__file__).resolve().with_name("dev-workflow.md")
@@ -22,6 +22,8 @@ PROJECTS = {  # path under ~: integration ref. Example:
     # "code/shared-checkout": "origin/main",  # a checkout whose local main lags
 }
 DISCOVER = []  # folders under ~ to search for other repos, e.g. ["code"]
+BUDGET = 100  # lines in dev-workflow.md; see CHANGELOG.md
+WORDS = 1300  # words, so the line budget cannot be beaten with long lines (table rows can't wrap)
 BUILTIN = {"compact", "code-review", "simplify", "security-review", "run", "loop", "schedule"}
 ACCOUNT_PLUGINS = {  # claude.ai account plugins: no files on disk, so not checkable here
     "product-management", "productivity", "data", "operations",
@@ -54,7 +56,7 @@ def exists(name, project=None):
         if plugin in local:
             return plugin_skill(plugin, skill)
         return None if plugin in ACCOUNT_PLUGINS else False
-    if name in BUILTIN:
+    if name in BUILTIN or shutil.which(name):  # a shell command (`date`), not a skill
         return True
     roots = [HOME / ".claude"] + ([project / ".claude"] if project else [])
     return any((r / "skills" / name / "SKILL.md").is_file() or (r / "agents" / f"{name}.md").is_file()
@@ -102,6 +104,12 @@ def section(text, where):
 
 
 check(WORKFLOW.read_text(), WORKFLOW.name)
+lines = len(WORKFLOW.read_text().splitlines())
+if lines > BUDGET:
+    report("MISSING", f"line budget: {lines} > {BUDGET}; delete or merge a rule first", WORKFLOW.name)
+words = len(WORKFLOW.read_text().split())
+if words > WORDS:
+    report("MISSING", f"word budget: {words} > {WORDS}; delete or merge a rule first", WORKFLOW.name)
 
 repos = {HOME / p: ref for p, ref in PROJECTS.items()}
 for base in DISCOVER:

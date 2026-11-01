@@ -18,6 +18,12 @@ and the test that proves it; everything else takes every stage. Say which stages
 | 8. Record | `operations:runbook` for a procedure that will recur; the project's knowledge docs or CLAUDE.md for a trap found; `product-management:stakeholder-update` for a weekly "what shipped" | The lesson lives in one place a later session will read |
 | 9. Retro | `/retro`, typed by the owner at the end of a session; it suggests missing automated checks, CLAUDE.md rules that belong in a check, and wasteful tool calls | Each suggestion applied (a check, a trap or memory, a pruned rule) or declined |
 
+Size it before you start: name a multi-step task small (under an hour), medium (a few hours)
+or large (a day or more). A large one gets an estimate and a smaller first cut proposed to the
+owner before any build. Get something working early and deepen it from there. Run `date` at the
+start and at each step; when a step passes twice its share of the estimate, tell the owner where
+it stands and what is left.
+
 Long-running work: `sitrep-panel:sitrep-panel` for a live progress page. Recurring checks:
 `loop` (this session) or `schedule` (cloud, cron).
 
@@ -43,6 +49,18 @@ session alone was 35%. Reads of cached context, not output, were most of the bil
 - An earlier auto-compact (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`) is a lever; measure what it saves
   on your own log before and after setting it.
 
+## Changing the workflow
+
+Outside ideas are judged in one session and applied in another, the only one that edits this
+file. Each hand-off is a proposal file (what was found, why adopt it, the exact change, what was
+rejected) that the owner can read and veto; after it lands, a fresh subagent given only the diff
+and the proposal's goal checks it. Before reviewing an outside source, read `REVIEWED.md`. Every
+change to this repo adds a `CHANGELOG.md` entry in the same commit, with a reason it can cite or
+"reason not recorded", never an inferred one. This file is at most 100 lines and 1,300 words
+(`check-names.py` enforces both): delete or merge a rule to make room. A monthly pass proposes
+deletions (rules that contradict or repeat another, whose reason no longer applies, or that go
+unused) and never deletes on its own.
+
 ## When a skill is added
 
 When the owner adds a skill or plugin, evaluate it against this file before using it:
@@ -57,4 +75,4 @@ When the owner adds a skill or plugin, evaluate it against this file before usin
 3. Check every project's "Workflow" section for a conflict, e.g. a skill that runs
    `git worktree add` in a project that requires its own worktree script.
 4. Propose the edit to this file and any project section; apply it once the owner agrees, rerun
-   `check-names.py`, and commit.
+   `check-names.py`, and commit with its `CHANGELOG.md` entry.

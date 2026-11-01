@@ -14,6 +14,8 @@ discussion for ideas and questions.
 |---|---|
 | [`dev-workflow.md`](dev-workflow.md) | The workflow itself: nine stages with a "done when" for each, between-feature routines, session-size habits, and how to evaluate a newly added skill. Agents read it; each project's `CLAUDE.md` points to it and lists only its own substitutions. |
 | [`check-names.py`](check-names.py) | Fails when the workflow, or a project's `## Workflow` section, names a skill or agent that isn't installed. Fill in `PROJECTS` for your own repos. |
+| [`CHANGELOG.md`](CHANGELOG.md) | Why each rule exists, one entry per change, with a cited reason or "reason not recorded". |
+| [`REVIEWED.md`](REVIEWED.md) | Every outside skill, repo or piece of feedback reviewed, with the verdict and why, so nothing is re-reviewed by accident. |
 | [`agents/plan-reality-check.md`](agents/plan-reality-check.md) | A read-only subagent that checks a written plan against the code before anyone builds it: references that don't exist, claims the code contradicts, helpers that duplicate existing ones. |
 
 ## How it's wired
@@ -31,7 +33,8 @@ discussion for ideas and questions.
   List only what differs from the shared file, or what a project rule already forbids (for
   example, a skill that would merge to main locally in a repo that only integrates by push). A
   line that repeats a rule already stated elsewhere in the same `CLAUDE.md` is noise.
-- `check-names.py` runs before and after every edit to either file.
+- `check-names.py` runs before and after every edit to either file. It also holds `dev-workflow.md` to
+  100 lines and 1,300 words, so a new rule means deleting or merging an old one.
 
 ## Skills it names
 
