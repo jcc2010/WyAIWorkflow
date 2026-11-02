@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""
+claude-cost: where Claude Code spend goes, from the local otelcol event log.
+
+Reads the api_request events that a local OpenTelemetry collector writes
+(file exporter at ~/.local/otelcol/data/events.jsonl) and reports spend by project, by agent and
+model, by context size, and on turns that rebuilt the prompt cache after an
+idle gap.
+
+  claude-cost              last 7 days
+  claude-cost --days 1     today-ish
+  claude-cost --top 20     more sessions
+
+The cost on each event is Claude Code's own estimate at API prices; on a
+subscription it measures usage-limit burn, not money.
+"""
+import argparse, collections, datetime as dt, glob, json, os, re, sys
+
+EVENTS = os.path.expanduser("~/.local/otelcol/data/events.jsonl")
+# otelcol rotates events.jsonl at 50 MB into events-<timestamp>-size.jsonl; read those too.
+PROJECTS = os.path.expanduser("~/.claude/projects")
+# Claude Code names a project folder after its path with / and . turned into -.
+HOME_PREFIX = re.sub(r"[^A-Za-z0-9]", "-", os.path.expanduser("~")) + "-"
+MIN_CONTEXT = 20_000          # ignore rebuilds of small contexts
+BANDS = (50, 100, 200, 300, 400, 600)  # thousand tokens
+
+
+def attrs(items):
+    return {x["key"]: next(iter(x["value"].values()), None) for x in items or []}
+
+
+def event_files():
+    """The rotated backups oldest first (their names sort by timestamp), then the live file."""
+    backups = sorted(glob.glob(os.path.join(os.path.dirname(EVENTS), "events-*.jsonl")))
+    return backups + [EVENTS]
+
+
+def load(since):
+    reqs = []
+    for path in event_files():
+        with open(path, encoding="utf-8", errors="replace") as f:
+            reqs.extend(read_events(f, since))
+    reqs.sort(key=lambda r: r["t"])
+    return reqs
+
+
+def read_events(f, since):
+    reqs = []
+    for line in f:  # one OTLP batch per line; never read the file whole
+        try:
+            batch = json.loads(line)
+        except ValueError:
+            continue
+        for rl in batch.get("resourceLogs", []):
+            for sl in rl.get("scopeLogs", []):
+                for r in sl.get("logRecords", []):
+                    a = attrs(r.get("attributes"))
+                    if a.get("event.name") != "api_request":
+                        continue
+                    t = dt.datetime.fromisoformat(a["event.timestamp"].replace("Z", "+00:00"))
+                    if t < since:
+                        continue
+                    reqs.append(dict(
+                        t=t, session=a.get("session.id", "?"), model=a.get("model", "?"),
+                        main=a.get("query_source") in ("sdk", "repl_main_thread", "compact"),
+                        source=a.get("query_source", "?"), agent=a.get("agent.name") or "main",
+                        output=int(a.get("output_tokens", 0)),
+                        input=int(a.get("input_tokens", 0)), read=int(a.get("cache_read_tokens", 0)),
+                        write=int(a.get("cache_creation_tokens", 0)), cost=float(a.get("cost_usd", 0))))
+    return reqs
+
+
+def session_names():
+    """session id -> (project, title), from ~/.claude/projects/<project>/<id>.jsonl."""
+    names = {}
+    for path in glob.glob(os.path.join(PROJECTS, "*", "*.jsonl")):
+        sid = os.path.basename(path)[:-6]
+        project = os.path.basename(os.path.dirname(path)).replace(HOME_PREFIX, "").lstrip("-")
+        title = ""
+        try:
+            with open(os.path.join(os.path.dirname(path), sid, "custom-title.json")) as f:
+                title = json.load(f).get("customTitle", "")
+        except (OSError, ValueError):
+            pass
+        names[sid] = (project, title)
+    return names
+
+
+def context(r):
+    return r["input"] + r["read"] + r["write"]
+
+
+def rebuilds(reqs):
+    """Turns whose cache write covers at least half the previous turn's context, after a gap of 5 min or more."""
+    last, out = {}, []
+    for r in reqs:
+        key = (r["session"], r["model"], r["main"])
+        p = last.get(key)
+        if p:
+            gap = (r["t"] - p["t"]).total_seconds() / 60
+            if gap >= 5 and context(p) >= MIN_CONTEXT and r["write"] >= 0.5 * context(p):
+                out.append((r, gap))
+        last[key] = r
+    return out
+
+
+# $/M tokens (read, 1h cache write, output), fitted against this log's own cost_usd on 31 Oct 2026.
+PRICES = {"opus": (0.20, 8.0, 20.0), "sonnet": (0.10, 4.0, 10.0), "haiku": (0.03, 1.6, 4.0)}
+COMPACT_POINTS = (200_000, 300_000, 400_000)
+AFTER_COMPACT = 40_000   # what a compacted conversation restarts with
+SUMMARY_TOKENS = 8_000   # what the compaction call writes
+
+
+def prices(model):
+    return next((p for k, p in PRICES.items() if k in model), None)
+
+
+def replay_compaction(reqs, at):
+    """Replay each main conversation as if it auto-compacted at `at` tokens.
+
+    Returns (compactions, saved, spent) in dollars. Tokens a compaction removes
+    come off the cached prefix first, then off the turn's cache write. Says
+    nothing about what the shorter context would have cost in quality.
+    """
+    convos = collections.defaultdict(list)
+    for r in reqs:
+        if r["main"] and prices(r["model"]):
+            convos[(r["session"], r["model"])].append(r)
+    compactions, saved, spent = 0, 0.0, 0.0
+    for (_, model), turns in convos.items():
+        read, write, out = (p / 1e6 for p in prices(model))
+        prev = sim = None
+        for r in turns:
+            actual = context(r)
+            if prev is None or actual < prev:  # first turn, or a real compaction or /clear
+                sim = actual
+            else:
+                sim += actual - prev
+            if sim >= at:
+                compactions += 1
+                spent += sim * read + SUMMARY_TOKENS * out + AFTER_COMPACT * write
+                sim = AFTER_COMPACT
+            avoided = max(0, actual - sim)
+            from_read = min(r["read"], avoided)
+            saved += from_read * read + min(r["write"], avoided - from_read) * write
+            prev = actual
+    return compactions, saved, spent
+
+
+def money(x, total):
+    return f"${x:8.2f} {x / total:6.1%}" if total else f"${x:8.2f}"
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--days", type=float, default=7)
+    ap.add_argument("--top", type=int, default=10)
+    args = ap.parse_args()
+    if not os.path.exists(EVENTS):
+        sys.exit(f"no event log at {EVENTS}: is the otelcol LaunchAgent running?")
+
+    since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=args.days)
+    reqs = load(since)
+    if not reqs:
+        sys.exit(f"no api_request events in the last {args.days:g} days")
+    total = sum(r["cost"] for r in reqs)
+    names = session_names()
+    print(f"{len(reqs)} requests, {len({r['session'] for r in reqs})} sessions, "
+          f"{reqs[0]['t']:%d %b %H:%M} to {reqs[-1]['t']:%d %b %H:%M} UTC: ${total:.2f}")
+    covered = (reqs[-1]["t"] - reqs[0]["t"]).total_seconds() / 86400
+    if covered < args.days * 0.9:
+        print(f"WARNING: the log covers only {covered:.1f} of the {args.days:g} days asked for; "
+              f"otelcol keeps about 10 days of backups")
+    print(f"cache read {sum(r['read'] for r in reqs) / 1e6:.1f}M tokens, "
+          f"cache write {sum(r['write'] for r in reqs) / 1e6:.1f}M\n")
+
+    print("By project")
+    by_project = collections.Counter()
+    for r in reqs:
+        by_project[names.get(r["session"], ("(not on disk)", ""))[0]] += r["cost"]
+    for project, cost in by_project.most_common():
+        print(f"  {money(cost, total)}  {project}")
+
+    print("\nBy agent and model")
+    by_agent = collections.defaultdict(lambda: [0, 0.0])
+    for r in reqs:
+        g = by_agent[(r["agent"], re.sub(r"-\d{8}$", "", r["model"]))]
+        g[0] += 1
+        g[1] += r["cost"]
+    for (agent, model), (n, cost) in sorted(by_agent.items(), key=lambda kv: -kv[1][1]):
+        print(f"  {money(cost, total)}  {n:5} req  ${cost / n:.3f}/req  {agent} | {model}")
+
+    print(f"\nTop {args.top} sessions (largest context reached)")
+    by_session, peak = collections.Counter(), collections.Counter()
+    for r in reqs:
+        by_session[r["session"]] += r["cost"]
+        peak[r["session"]] = max(peak[r["session"]], context(r))
+    for sid, cost in by_session.most_common(args.top):
+        project, title = names.get(sid, ("", ""))
+        print(f"  {money(cost, total)}  {peak[sid] / 1e3:4.0f}k  {sid[:8]}  {title or project}")
+
+    print("\nBy context size per request")
+    band = collections.defaultdict(lambda: [0, 0.0])
+    for r in reqs:
+        b = next((x for x in BANDS if context(r) < x * 1000), None)
+        band[b][0] += 1
+        band[b][1] += r["cost"]
+    for b in list(BANDS) + [None]:
+        if b in band:
+            n, cost = band[b]
+            label = f"<{b}k" if b else f">={BANDS[-1]}k"
+            print(f"  {label:>6}  {n:5} req  {money(cost, total)}  ${cost / n:.3f}/req")
+
+    print("\nCache rebuilt after an idle gap")
+    groups = collections.defaultdict(lambda: [0, 0, 0.0])
+    for r, gap in rebuilds(reqs):
+        g = ("main" if r["main"] else "subagent", "5-60 min" if gap < 60 else ">60 min")
+        groups[g][0] += 1
+        groups[g][1] += r["write"]
+        groups[g][2] += r["cost"]
+    if not groups:
+        print("  none")
+    for (who, gap), (n, written, cost) in sorted(groups.items()):
+        print(f"  {who:8} {gap:>8}  {n:4} turns  {written / 1e6:5.2f}M written  {money(cost, total)}")
+
+    print("\nIf main conversations had auto-compacted earlier (CLAUDE_CODE_AUTO_COMPACT_WINDOW)")
+    for at in COMPACT_POINTS:
+        n, saved, spent = replay_compaction(reqs, at)
+        print(f"  at {at // 1000}k: {n:3} compactions, saves {money(saved - spent, total)}"
+              f"  (re-reading ${saved:.2f} avoided, compacting ${spent:.2f})")
+    print("  Assumes an 8k summary and a 40k restart; the cost of what a summary forgets isn't counted.")
+
+
+if __name__ == "__main__":
+    main()

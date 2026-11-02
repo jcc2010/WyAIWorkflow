@@ -10,6 +10,9 @@ the working file is used instead when the checkout is on that branch, so uncommi
 are checked. A listed project with no Workflow section fails. Any other repo whose
 CLAUDE.md mentions dev-workflow.md is found and checked too.
 
+Every SKILL.md you own (~/.claude/skills and ~/.claude/scheduled-tasks) must be under
+SKILL_BYTES; move sections into sibling files read at the step that needs them.
+
 Account plugins (enabled on claude.ai, no files on this Mac) print as UNVERIFIED and do not
 fail; any other unknown plugin is MISSING. BUILTIN is hand-kept: commands that ship with
 Claude Code and have no file to find."""
@@ -23,6 +26,7 @@ PROJECTS = {  # path under ~: integration ref. Example:
 }
 DISCOVER = []  # folders under ~ to search for other repos, e.g. ["code"]
 BUDGET = 100  # lines in dev-workflow.md; see CHANGELOG.md
+SKILL_BYTES = 20000  # compaction re-attaches an invoked skill cut at 20,000 characters (obra/superpowers#2481)
 WORDS = 1300  # words, so the line budget cannot be beaten with long lines (table rows can't wrap)
 BUILTIN = {"compact", "code-review", "simplify", "security-review", "run", "loop", "schedule"}
 ACCOUNT_PLUGINS = {  # claude.ai account plugins: no files on disk, so not checkable here
@@ -110,6 +114,10 @@ if lines > BUDGET:
 words = len(WORKFLOW.read_text().split())
 if words > WORDS:
     report("MISSING", f"word budget: {words} > {WORDS}; delete or merge a rule first", WORKFLOW.name)
+
+for md in sorted((HOME / ".claude/skills").glob("*/SKILL.md")) + sorted((HOME / ".claude/scheduled-tasks").glob("*/SKILL.md")):
+    if md.stat().st_size >= SKILL_BYTES:
+        report("MISSING", f"skill size: {md.stat().st_size} bytes >= {SKILL_BYTES}; move sections into sibling files", str(md))
 
 repos = {HOME / p: ref for p, ref in PROJECTS.items()}
 for base in DISCOVER:

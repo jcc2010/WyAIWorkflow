@@ -10,19 +10,28 @@ and the test that proves it; everything else takes every stage. Say which stages
 |---|---|---|
 | 1. Pick the work | `product-management:roadmap-update`, `productivity:task-management` | The owner named the task in chat, or it is the next item on the project's roadmap |
 | 2. Shape it | Create the project's worktree first, so the spec commits on its branch, never on main; then `superpowers:brainstorming`; `product-management:write-spec` when the feature has user-facing goals worth measuring | The owner approved the description or the spec |
-| 3. Plan | `superpowers:writing-plans`, then dispatch the `plan-reality-check` agent with the plan path, the checkout and the base ref, and none of your own view of the plan | The check's findings are fixed in the plan |
-| 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development`; a bug starts at `superpowers:systematic-debugging` | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
-| 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen | The project's full suites exited 0, and you have screenshots of visual changes |
+| 3. Plan | `superpowers:writing-plans`, then dispatch the `plan-reality-check` agent with the plan path, the checkout and the base ref, and none of your own view of the plan; log its verdict (below) | The check's findings are fixed in the plan |
+| 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development` (general-purpose subagents default to Sonnet: pass model "opus" for implementation and review); a bug starts at `superpowers:systematic-debugging` | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
+| 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen; any review agent dispatched here logs its verdict (below) | The project's full suites exited 0, and you have screenshots of visual changes |
 | 6. Review | `code-review` (medium; high for data, auth or money paths), `simplify`; `security-review` for auth, upload, payment or API surface | Every finding is fixed or explicitly declined with a reason |
 | 7. Ship | `superpowers:finishing-a-development-branch`, then the project's deploy block (its Workflow section names the substitute where there is none); `operations:change-request` first for a migration on live data or an auth change | Deployed and checked live, or the owner chose to hold |
 | 8. Record | `operations:runbook` for a procedure that will recur; the project's knowledge docs or CLAUDE.md for a trap found; `product-management:stakeholder-update` for a weekly "what shipped" | The lesson lives in one place a later session will read |
 | 9. Retro | `/retro`, typed by the owner at the end of a session; it suggests missing automated checks, CLAUDE.md rules that belong in a check, and wasteful tool calls | Each suggestion applied (a check, a trap or memory, a pruned rule) or declined |
+
+Each review agent you dispatch (stage 3's `plan-reality-check`, stage 5's design critic, a fresh
+reviewer) gets its verdict logged by you: one line `{"date", "agent", "project", "verdict" or "count"}`
+appended to `~/.claude/review-verdicts.jsonl`, which `scorecard.py` counts.
 
 Size it before you start: name a multi-step task small (under an hour), medium (a few hours)
 or large (a day or more). A large one gets an estimate and a smaller first cut proposed to the
 owner before any build. Get something working early and deepen it from there. Run `date` at the
 start and at each step; when a step passes twice its share of the estimate, tell the owner where
 it stands and what is left.
+
+Legacy names: rename them only in an area the task already touches, as their own commit on its
+branch, never repo-wide. Never rename a name held outside the repo (bundle or keychain ids, URL
+schemes, tables or stored values, migration filenames, cookie and cache keys, env vars, CLI
+command names) without a planned migration.
 
 Long-running work: `sitrep-panel:sitrep-panel` for a live progress page. Recurring checks:
 `loop` (this session) or `schedule` (cloud, cron).
@@ -36,6 +45,12 @@ the whole codebase; `security-review` in stage 6 stays the per-change check. Sta
 "quick" profile or a run scoped to one trust boundary (tenant data isolation, outbound fetchers)
 and an explicit agent budget: a standard run is dozens of agents. Output lands outside the repo;
 confirmed findings enter stage 1. It is never scheduled.
+
+## Spend
+
+Run `claude-cost --days N --top N` (reads the local OpenTelemetry log) when the owner asks about
+cost or usage limits. `scorecard.py` takes a monthly reading (cost per commit, churn, new traps,
+review hit rate); judge a workflow change by the next month's reading, never as cause.
 
 ## Session size
 
