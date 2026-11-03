@@ -28,6 +28,8 @@ DISCOVER = []  # folders under ~ to search for other repos, e.g. ["code"]
 BUDGET = 100  # lines in dev-workflow.md; see CHANGELOG.md
 SKILL_BYTES = 20000  # compaction re-attaches an invoked skill cut at 20,000 characters (obra/superpowers#2481)
 WORDS = 1300  # words, so the line budget cannot be beaten with long lines (table rows can't wrap)
+SUBAGENTS = WORKFLOW.with_name("subagents.md")  # optional: a separate dispatch workflow
+SUB_BUDGET, SUB_WORDS = 60, 600  # its own, smaller budget
 BUILTIN = {"compact", "code-review", "simplify", "security-review", "run", "loop", "schedule"}
 ACCOUNT_PLUGINS = {  # claude.ai account plugins: no files on disk, so not checkable here
     "product-management", "productivity", "data", "operations",
@@ -114,6 +116,14 @@ if lines > BUDGET:
 words = len(WORKFLOW.read_text().split())
 if words > WORDS:
     report("MISSING", f"word budget: {words} > {WORDS}; delete or merge a rule first", WORKFLOW.name)
+
+if SUBAGENTS.is_file():
+    sub = SUBAGENTS.read_text()
+    check(sub, SUBAGENTS.name)
+    if len(sub.splitlines()) > SUB_BUDGET:
+        report("MISSING", f"line budget: {len(sub.splitlines())} > {SUB_BUDGET}; delete or merge a rule first", SUBAGENTS.name)
+    if len(sub.split()) > SUB_WORDS:
+        report("MISSING", f"word budget: {len(sub.split())} > {SUB_WORDS}; delete or merge a rule first", SUBAGENTS.name)
 
 for md in sorted((HOME / ".claude/skills").glob("*/SKILL.md")) + sorted((HOME / ".claude/scheduled-tasks").glob("*/SKILL.md")):
     if md.stat().st_size >= SKILL_BYTES:

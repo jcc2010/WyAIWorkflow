@@ -12,14 +12,19 @@ discussion for ideas and questions.
 
 | File | What it is |
 |---|---|
-| [`dev-workflow.md`](dev-workflow.md) | The workflow itself: nine stages with a "done when" for each, between-feature routines, session-size habits, and how to evaluate a newly added skill. Agents read it; each project's `CLAUDE.md` points to it and lists only its own substitutions. |
-| [`check-names.py`](check-names.py) | Fails when the workflow, or a project's `## Workflow` section, names a skill or agent that isn't installed, when `dev-workflow.md` passes its line or word budget, or when a `SKILL.md` you own reaches 20,000 bytes. Fill in `PROJECTS` for your own repos. |
+| [`dev-workflow.md`](dev-workflow.md) | The workflow itself: nine stages with a "done when" for each, the declare-before-editing rule, between-feature routines, session-size habits, and how to evaluate a newly added skill. Agents read it; each project's `CLAUDE.md` points to it and lists only its own substitutions. |
+| [`subagents.md`](subagents.md) | The dispatch workflow, stage 4's other half: which agent to pick, what a brief states, and what to check on return. Held to its own budget of 60 lines and 600 words. |
+| [`check-names.py`](check-names.py) | Fails when the workflow, or a project's `## Workflow` section, names a skill or agent that isn't installed, when `dev-workflow.md` passes its line or word budget, when `subagents.md` passes its budget, or when a `SKILL.md` you own reaches 20,000 bytes. Fill in `PROJECTS` for your own repos. |
 | [`CHANGELOG.md`](CHANGELOG.md) | Why each rule exists, one entry per change, with a cited reason or "reason not recorded". |
 | [`REVIEWED.md`](REVIEWED.md) | Every outside skill, repo or piece of feedback reviewed, with the verdict and why, so nothing is re-reviewed by accident. |
-| [`scorecard.py`](scorecard.py) | The monthly scorecard: cost per commit, rework churn, new trap docs and review hit rate per project, appended to a history file. Reads `PROJECTS` from `check-names.py`. |
+| [`scorecard.py`](scorecard.py) | The monthly scorecard: cost per commit, rework churn, new trap docs, review hit rate and `Workflow:` trailer shares per project, appended to a history file. Reads `PROJECTS` from `check-names.py`. |
 | [`bin/claude-cost`](bin/claude-cost) | Where Claude Code spend goes, from a local OpenTelemetry event log: by project, by agent and model, by context size, and cache rebuilds after idle gaps. Put it on your `PATH`; `scorecard.py` uses it. |
-| [`agents/general-purpose.md`](agents/general-purpose.md) | Overrides the built-in general-purpose subagent: defaults to Sonnet (pass model "opus" per dispatch for implementation and review) and ends with a report-back prompt. |
+| [`agents/general-purpose.md`](agents/general-purpose.md) | Overrides the built-in general-purpose subagent: defaults to Sonnet (pass model "opus" per dispatch to review data, auth or money paths), carries the git and deploy rules a subagent must follow, and returns a fixed report (status, changes, checks with exit codes, blockers). |
+| [`agents/implementer.md`](agents/implementer.md) | A subagent pinned to Opus that writes code for one task, test first, and returns the same fixed report plus the red run. |
 | [`agents/plan-reality-check.md`](agents/plan-reality-check.md) | A read-only subagent that checks a written plan against the code before anyone builds it: references that don't exist, claims the code contradicts, helpers that duplicate existing ones. |
+| [`bin/workflow-declare`](bin/workflow-declare) | Declares a session's path before its first edit (`full` with a plan, `shrunk 1-3` with a reason, or `none` with a reason) and prints the `Workflow:` trailer each commit ends with. Put it on your `PATH`. |
+| [`hooks/workflow-gate.py`](hooks/workflow-gate.py) | A PreToolUse hook: records declarations, refuses an edit before one, refuses a commit whose trailer doesn't match its files, and refuses a subagent's `git stash`, `git add -A` / `.` and `git commit -a`. Fails open. |
+| [`hooks/log-review-verdict.py`](hooks/log-review-verdict.py) | A SubagentStop hook that logs `plan-reality-check` and design-critic verdicts to `~/.claude/review-verdicts.jsonl`, which `scorecard.py` reads. |
 
 ## How it's wired
 
@@ -36,13 +41,16 @@ discussion for ideas and questions.
   List only what differs from the shared file, or what a project rule already forbids (for
   example, a skill that would merge to main locally in a repo that only integrates by push). A
   line that repeats a rule already stated elsewhere in the same `CLAUDE.md` is noise.
+- The two hooks and `workflow-declare` are optional. Put `workflow-declare` on your `PATH`, copy
+  the hooks under `~/.claude/hooks/`, and wire them in `~/.claude/settings.json` (PreToolUse for
+  the gate, SubagentStop for the verdict log). The wiring isn't published, and until it exists
+  the declaration and trailer rules rest on the agent following them.
 - `check-names.py` runs before and after every edit to either file. It also holds `dev-workflow.md` to
   100 lines and 1,300 words, so a new rule means deleting or merging an old one.
 
 ## Skills it names
 
-The workflow leans on the [superpowers](https://github.com/obra/superpowers) and
-[sitrep-panel](https://github.com/dbl8005/sitrep-panel) plugins, Claude
+The workflow leans on the [superpowers](https://github.com/obra/superpowers) plugin, Claude
 Code's built-in `/code-review`, `/simplify` and `/security-review`, and a few skills from
 elsewhere. Those are linked rather than copied here:
 
@@ -54,8 +62,6 @@ elsewhere. Those are linked rather than copied here:
   The only local change is `disable-model-invocation: true` in its frontmatter. As published,
   its description matches any security question, so it would otherwise take over from the
   per-change `/security-review`.
-- `product-management`, `productivity` and `operations`: Anthropic's Cowork plugins, used for
-  roadmap, spec and runbook work.
 
 `/retro`, `/improve-codebase-architecture` and `/security-audit` are only ever started by the
 owner typing them, never by an agent. That's how they can sit beside the per-task stages

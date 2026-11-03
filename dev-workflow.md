@@ -4,23 +4,28 @@ The default path a feature or bugfix takes, and the skill or agent used at each 
 project's own CLAUDE.md wins wherever it disagrees; its "Workflow" section lists the
 substitutions, and a substitution there replaces whatever a skill here would otherwise do. A
 fix of a few lines with a known cause shrinks stages 1–3 to one sentence in chat naming the fix
-and the test that proves it; everything else takes every stage. Say which stages you shrank.
+and the test that proves it; everything else takes every stage. Before the first edit, run
+`workflow-declare` (full with its plan, shrunk 1–3 with why, or none with why); a hook enforces
+it once installed, dispatches that edit run it first, and each commit ends with the
+Workflow: trailer it prints.
 
 | Stage | Use | Done when |
 |---|---|---|
-| 1. Pick the work | `product-management:roadmap-update`, `productivity:task-management` | The owner named the task in chat, or it is the next item on the project's roadmap |
-| 2. Shape it | Create the project's worktree first, so the spec commits on its branch, never on main; then `superpowers:brainstorming`; `product-management:write-spec` when the feature has user-facing goals worth measuring | The owner approved the description or the spec |
-| 3. Plan | `superpowers:writing-plans`, then dispatch the `plan-reality-check` agent with the plan path, the checkout and the base ref, and none of your own view of the plan; log its verdict (below) | The check's findings are fixed in the plan |
-| 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development` (general-purpose subagents default to Sonnet: pass model "opus" for implementation and review); a bug starts at `superpowers:systematic-debugging` | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
+| 1. Pick the work | The owner's request, or the project's roadmap | The owner named the task in chat, or it is the next item on the project's roadmap |
+| 2. Shape it | Create the project's worktree first, so the spec commits on its branch, never on main; then `superpowers:brainstorming` | The owner approved the description or the spec |
+| 3. Plan | `superpowers:writing-plans`, then dispatch the `plan-reality-check` agent with the plan path, the checkout and the base ref, and none of your own view of the plan; log its verdict with its plan path (below) | The check's findings are fixed in the plan |
+| 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development` (dispatch per `subagents.md`); a bug starts at `superpowers:systematic-debugging` | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
 | 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen; any review agent dispatched here logs its verdict (below) | The project's full suites exited 0, and you have screenshots of visual changes |
 | 6. Review | `code-review` (medium; high for data, auth or money paths), `simplify`; `security-review` for auth, upload, payment or API surface | Every finding is fixed or explicitly declined with a reason |
-| 7. Ship | `superpowers:finishing-a-development-branch`, then the project's deploy block (its Workflow section names the substitute where there is none); `operations:change-request` first for a migration on live data or an auth change | Deployed and checked live, or the owner chose to hold |
-| 8. Record | `operations:runbook` for a procedure that will recur; the project's knowledge docs or CLAUDE.md for a trap found; `product-management:stakeholder-update` for a weekly "what shipped" | The lesson lives in one place a later session will read |
+| 7. Ship | `superpowers:finishing-a-development-branch`, then the project's deploy block (its Workflow section names the substitute where there is none); before a migration on live data or an auth change, give the owner its impact and rollback plan | Deployed and checked live, or the owner chose to hold |
+| 8. Record | The project's knowledge docs or CLAUDE.md, for a trap found or a procedure that will recur | The lesson lives in one place a later session will read |
 | 9. Retro | `/retro`, typed by the owner at the end of a session; it suggests missing automated checks, CLAUDE.md rules that belong in a check, and wasteful tool calls | Each suggestion applied (a check, a trap or memory, a pruned rule) or declined |
 
-Each review agent you dispatch (stage 3's `plan-reality-check`, stage 5's design critic, a fresh
-reviewer) gets its verdict logged by you: one line `{"date", "agent", "project", "verdict" or "count"}`
-appended to `~/.claude/review-verdicts.jsonl`, which `scorecard.py` counts.
+A hook logs plan-reality-check and design-critic verdicts; any other review agent you dispatch
+(a fresh reviewer) gets its verdict logged by you: one line
+`{"date", "agent", "project", "verdict" or "count"}` (plus `"plan"` for plan-reality-check;
+project is the repo directory name) appended to `~/.claude/review-verdicts.jsonl`, which
+`scorecard.py` counts.
 
 Size it before you start: name a multi-step task small (under an hour), medium (a few hours)
 or large (a day or more). A large one gets an estimate and a smaller first cut proposed to the
@@ -33,8 +38,7 @@ branch, never repo-wide. Never rename a name held outside the repo (bundle or ke
 schemes, tables or stored values, migration filenames, cookie and cache keys, env vars, CLI
 command names) without a planned migration.
 
-Long-running work: `sitrep-panel:sitrep-panel` for a live progress page. Recurring checks:
-`loop` (this session) or `schedule` (cloud, cron).
+Recurring checks: `loop` (this session) or `schedule` (cloud, cron).
 
 Between features: `/improve-codebase-architecture`, typed by the owner monthly or when `/retro`
 keeps flagging the same area (a local scheduled task can run its scan-and-report half on the
@@ -60,7 +64,7 @@ session alone was 35%. Reads of cached context, not output, were most of the bil
 - When a context-size nudge fires (a Stop hook at 300k works), finish the current task, then
   suggest `/compact` or a new session for the next one. Mid-task, keep going.
 - Unrelated work starts in a new session; a long one makes every turn re-read context the new
-  task never needs. Standing sessions (a live status panel) keep to their own thread.
+  task never needs. Standing sessions keep to their own thread.
 - An earlier auto-compact (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`) is a lever; measure what it saves
   on your own log before and after setting it.
 

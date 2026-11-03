@@ -66,7 +66,8 @@ def read_events(f, since):
                         source=a.get("query_source", "?"), agent=a.get("agent.name") or "main",
                         output=int(a.get("output_tokens", 0)),
                         input=int(a.get("input_tokens", 0)), read=int(a.get("cache_read_tokens", 0)),
-                        write=int(a.get("cache_creation_tokens", 0)), cost=float(a.get("cost_usd", 0))))
+                        write=int(a.get("cache_creation_tokens", 0)),
+                        write_5m=int(a.get("cache_creation_5m_tokens", 0)), cost=float(a.get("cost_usd", 0))))
     return reqs
 
 
@@ -106,6 +107,33 @@ def rebuilds(reqs):
 
 # $/M tokens (read, 1h cache write, output), fitted against this log's own cost_usd on 31 Oct 2026.
 PRICES = {"opus": (0.20, 8.0, 20.0), "sonnet": (0.10, 4.0, 10.0), "haiku": (0.03, 1.6, 4.0)}
+# $/M tokens (uncached input, 5m cache write); with PRICES these reproduced every Opus and Sonnet
+# cost_usd in the log on 3 Nov 2026. Haiku's cost_usd fits no linear rate; its split is approximate.
+INPUT_PRICES = {"opus": (4.0, 5.0), "sonnet": (2.0, 2.5), "haiku": (0.8, 1.0)}
+TYPES = ("read", "write", "output", "input")
+
+
+def split(r):
+    """The request's cost_usd divided between cache read, cache write, output and uncached input,
+    in proportion to what each would cost at list rates, so the four always add up to cost_usd."""
+    key = next((k for k in PRICES if k in r["model"]), "opus")
+    read, write_1h, out = PRICES[key]
+    inp, write_5m = INPUT_PRICES[key]
+    w = dict(read=r["read"] * read, write=r["write_5m"] * write_5m + (r["write"] - r["write_5m"]) * write_1h,
+             output=r["output"] * out, input=r["input"] * inp)
+    whole = sum(w.values())
+    if not whole:
+        return dict.fromkeys(TYPES, 0.0) | {"input": r["cost"]}
+    return {k: r["cost"] * v / whole for k, v in w.items()}
+
+
+TYPE_HEAD = "   read$  write$    out$     in$   w/r"
+
+
+def by_type(c):
+    """read $, write $, output $, input $, and write $ over read $ (high = a cold cache)."""
+    ratio = f"{c['write'] / c['read']:5.2f}" if c["read"] else "    -"
+    return "".join(f"{c[k]:8.2f}" for k in TYPES) + " " + ratio
 COMPACT_POINTS = (200_000, 300_000, 400_000)
 AFTER_COMPACT = 40_000   # what a compacted conversation restarts with
 SUMMARY_TOKENS = 8_000   # what the compaction call writes
@@ -171,33 +199,47 @@ def main():
     if covered < args.days * 0.9:
         print(f"WARNING: the log covers only {covered:.1f} of the {args.days:g} days asked for; "
               f"otelcol keeps about 10 days of backups")
-    print(f"cache read {sum(r['read'] for r in reqs) / 1e6:.1f}M tokens, "
-          f"cache write {sum(r['write'] for r in reqs) / 1e6:.1f}M\n")
-
-    print("By project")
-    by_project = collections.Counter()
+    kinds = collections.Counter()
     for r in reqs:
-        by_project[names.get(r["session"], ("(not on disk)", ""))[0]] += r["cost"]
-    for project, cost in by_project.most_common():
-        print(f"  {money(cost, total)}  {project}")
+        kinds.update(split(r))
+    print(f"cache read {sum(r['read'] for r in reqs) / 1e6:.1f}M tokens, "
+          f"cache write {sum(r['write'] for r in reqs) / 1e6:.1f}M "
+          f"({sum(r['write_5m'] for r in reqs) / 1e6:.1f}M of it with the 5-minute lifetime)")
+    print("  " + ", ".join(f"{k} {money(kinds[k], total).strip()}" for k in TYPES) + "\n")
 
-    print("\nBy agent and model")
-    by_agent = collections.defaultdict(lambda: [0, 0.0])
+    print(f"By project{' ' * 25}{TYPE_HEAD}")
+    by_project, project_kinds = collections.Counter(), collections.defaultdict(collections.Counter)
+    for r in reqs:
+        project = names.get(r["session"], ("(not on disk)", ""))[0]
+        by_project[project] += r["cost"]
+        project_kinds[project].update(split(r))
+    for project, cost in by_project.most_common():
+        print(f"  {money(cost, total)}  {' ' * 15}{by_type(project_kinds[project])}  {project}")
+
+    print(f"\nBy agent and model{' ' * 17}{TYPE_HEAD}   5m%")
+    by_agent = collections.defaultdict(lambda: [0, 0.0, collections.Counter(), 0, 0])
     for r in reqs:
         g = by_agent[(r["agent"], re.sub(r"-\d{8}$", "", r["model"]))]
         g[0] += 1
         g[1] += r["cost"]
-    for (agent, model), (n, cost) in sorted(by_agent.items(), key=lambda kv: -kv[1][1]):
-        print(f"  {money(cost, total)}  {n:5} req  ${cost / n:.3f}/req  {agent} | {model}")
+        g[2].update(split(r))
+        g[3] += r["write_5m"]
+        g[4] += r["write"]
+    for (agent, model), (n, cost, c, w5, w) in sorted(by_agent.items(), key=lambda kv: -kv[1][1]):
+        short = f"{w5 / w:5.0%}" if w else "    -"
+        print(f"  {money(cost, total)}  {n:5} req ${cost / n:.3f}/req{by_type(c)} {short}  {agent} | {model}")
 
-    print(f"\nTop {args.top} sessions (largest context reached)")
+    print(f"\nTop {args.top} sessions (largest context reached){TYPE_HEAD}")
     by_session, peak = collections.Counter(), collections.Counter()
+    session_kinds = collections.defaultdict(collections.Counter)
     for r in reqs:
         by_session[r["session"]] += r["cost"]
         peak[r["session"]] = max(peak[r["session"]], context(r))
+        session_kinds[r["session"]].update(split(r))
     for sid, cost in by_session.most_common(args.top):
         project, title = names.get(sid, ("", ""))
-        print(f"  {money(cost, total)}  {peak[sid] / 1e3:4.0f}k  {sid[:8]}  {title or project}")
+        print(f"  {money(cost, total)}  {peak[sid] / 1e3:4.0f}k  {sid[:8]}{by_type(session_kinds[sid])}  {title or project}")
+    print("  w/r is write $ over read $: high means the session kept paying to rebuild a cold cache.")
 
     print("\nBy context size per request")
     band = collections.defaultdict(lambda: [0, 0.0])

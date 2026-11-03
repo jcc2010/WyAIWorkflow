@@ -1,0 +1,31 @@
+#!/bin/sh
+# Declare this session's path through ~/.claude/workflow/dev-workflow.md before its first edit,
+# and print the commit trailer that repeats it. A PreToolUse hook (hooks/workflow-gate.py), once
+# installed, reads this command from the Bash call and records the declaration; this script
+# only validates the form.
+usage() {
+  echo "usage: workflow-declare full --plan <repo-relative plan path>" >&2
+  echo "       workflow-declare shrunk 1-3 \"known fix: <one phrase>\"" >&2
+  echo "       workflow-declare none \"<docs | data | archive | revert | merge>\"" >&2
+  exit 2
+}
+case "${1:-}" in
+  full)
+    [ "${2:-}" = "--plan" ] && [ -n "${3:-}" ] || usage
+    case "$3" in
+      /*|*[[:space:]]*) echo "workflow-declare: the plan path must be repo-relative, with no spaces" >&2; exit 1 ;;
+    esac
+    top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "workflow-declare: not in a git checkout" >&2; exit 1; }
+    [ -f "$top/$3" ] || { echo "workflow-declare: no plan at $3 in $top" >&2; exit 1; }
+    trailer="Workflow: full (plan: $3)" ;;
+  shrunk)
+    echo "${2:-}" | grep -Eq '^[1-3](-[1-3])?(,[1-3](-[1-3])?)*$' || { echo "workflow-declare: only stages 1-3 shrink" >&2; usage; }
+    [ -n "${3:-}" ] || usage
+    trailer="Workflow: shrunk $2 ($3)" ;;
+  none)
+    [ -n "${2:-}" ] || usage
+    trailer="Workflow: none ($2)" ;;
+  *) usage ;;
+esac
+echo "Declared. End each commit message with:"
+echo "$trailer"

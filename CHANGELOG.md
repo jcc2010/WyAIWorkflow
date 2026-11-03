@@ -6,6 +6,227 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-03 — dev-workflow.md no longer names the business plugins' skills
+- **What:** removed the `operations`, `product-management`, `productivity` and `data` skill names.
+  Stage 1 points at the owner's request or the project's roadmap. Stage 7 says to give the owner
+  the impact and rollback plan before a migration on live data or an auth change. Stage 8 records
+  a trap or recurring procedure in the knowledge bundle or CLAUDE.md. The closing "Not part of
+  coding work" note is gone. `check-names.py` keeps these as account plugins, because some
+  projects' files still name them.
+- **Why:** those plugins were turned off on 3 Nov; across 1,775 transcripts (484 Skill calls) none
+  of the four was ever called or typed. The owner asked for them to be dropped.
+
+## 2026-11-03 — dev-workflow.md no longer names sitrep-panel
+- **What:** removed the `sitrep-panel:sitrep-panel` line for long-running work, and the panel as
+  the example of a standing session.
+- **Why:** the plugin is no longer installed, so `check-names.py` failed. The owner confirmed the
+  removal in chat.
+
+## 2026-11-03 — claude-cost splits each row by token type
+- **What:** every project, agent-and-model and top-session row shows read $, write $, output $ and
+  uncached input $, and the write-to-read dollar ratio. Agent rows also show the share of cache
+  writes with the 5-minute lifetime. Each request's `cost_usd` is divided in proportion to list
+  rates (`INPUT_PRICES` beside `PRICES`), so the four add up to the row total.
+- **Why:** cache writes are a small share of cached tokens but about a third of spend, and the
+  report gave each row one figure, so cold-cache sessions did not show. The log records
+  `cache_creation_5m_tokens`, which tests the claim that subagents use a 5-minute cache: on 3 Nov
+  every subagent row was 100% 5-minute and main sessions 2%.
+
+## 2026-11-03 — the commit gate checks the trailer against the commit
+- **What:** a `none` trailer is refused on files outside Markdown, `docs/`, gitignored files and
+  the project's data paths, and a `full` or `shrunk` trailer is refused without a matching
+  declaration. No refusal shows a trailer template: each says to run `workflow-declare` first, and
+  quotes the declared trailer when there is one. The commit's paths are read from the whole
+  command, so a path after a multi-line `-m` message is seen.
+- **Why:** 3 of the 14 commits with a trailer since 2 Nov wrote `none` by hand over code edited
+  through Bash, which the edit gate cannot see, and one session learned the trailer from the old
+  refusal's template and typed `none` without declaring. The owner approved making it live.
+
+## 2026-11-03 — the verdict hook survives a removed plan checkout
+- **What:** when the plan's own repo no longer exists, `hooks/log-review-verdict.py` takes the
+  project from the caller's cwd and keeps the plan path from its `docs/` segment.
+- **Why:** replaying a real plan check whose scratch worktree was gone logged project "plans" and
+  an absolute plan path.
+
+## 2026-11-03 — the review-verdict hook is wired, and reads the hand-back report
+- **What:** settings.json's SubagentStop runs `log-review-verdict.py` for plan-reality-check and
+  the design critic. The hook reads the report from the subagent's SubagentHandback tool call,
+  which is how a background subagent returns it, and takes the project from the plan's own repo
+  when the brief gives an absolute plan path.
+- **Why:** the owner approved the wiring. The first live dispatch of each agent logged
+  "unparsed": the report was in the hand-back tool input, not in assistant text. Replayed through
+  the fix, both parsed, and a live recheck logged `ship`, 0 findings.
+
+## 2026-11-03 — a hook logs review verdicts
+- **What:** a SubagentStop hook (`hooks/log-review-verdict.py`) appends plan-reality-check and
+  design-critic verdicts to `review-verdicts.jsonl` with `"source": "hook"`, the main checkout's
+  directory as project, and the plan path made repo-relative so the workflow gate can match it.
+  Output it cannot parse logs as "unparsed". The by-hand rule now covers only other review agents.
+  `scorecard.py` shows the hook's share and counts "fix first" as flagged beside polish and rework.
+- **Why:** one project dispatched those two agents 47 times in 30 days and logged none, so its
+  review hit rate had no data. The owner approved the proposal.
+- **Limits:** live only once wired in settings.json, which needs the owner's approval.
+
+## 2026-11-03 — the subagent git refusal is wired
+- **What:** settings.json's workflow-gate Bash hooks gain `if` patterns for git stash and git add,
+  so the subagent refusals fire on their own, not only beside a commit or a declaration.
+- **Why:** the owner approved it. Probed live: a subagent's git stash, git add -A and git commit
+  -am were refused; its git add of a named file and git stash list ran; a main-session stash and
+  pop ran. That also proves subagent hook input carries `agent_id`.
+
+## 2026-11-03 — subagents may not git commit -a
+- **What:** `hooks/workflow-gate.py` also refuses a subagent's git commit -a, --all, or a short
+  cluster holding a (-am, -qa); --amend, --author and option values such as -m "-a" do not match.
+  `subagents.md` and both agent files name it.
+- **Why:** -a stages every modified tracked file, the same sweep as git add -A; one subagent run
+  used it in 30 days. A review found the gap, and the owner approved closing it.
+
+## 2026-11-03 — a separate workflow for subagents
+- **What:** `subagents.md`, the dispatch workflow (pick the agent, write the brief, check the
+  return), with its own `check-names.py` budget of 60 lines and 600 words. Stage 4 now says
+  "dispatch per subagents.md"; the model rule moved there. A new `implementer` agent pinned to
+  Opus writes code. `general-purpose.md` gains git and deploy lines. Both return a fixed report
+  (status, changes, checks with exit codes, blockers). `workflow-gate.py` refuses a subagent's git
+  stash, git add -A and git add . in any repo; main sessions are untouched.
+- **Why:** the owner asked for one and approved the three parts. In the busiest project over 30
+  days, 2,243 of 2,327 dispatches went to general-purpose with no agent-side git rules; 10 ran git
+  stash and 12 ran git add -A or git add . `dev-workflow.md` had no room left.
+- **Limits:** the hook sees git stash and git add only where settings.json's `if` patterns match;
+  until they are added it fires only on commands that also contain a commit or a declaration. The
+  implementer's Opus cost against per-dispatch choice is unmeasured; compare with `claude-cost`.
+
+## 2026-11-02 — Opus subagents only to write code or review data, auth or money paths
+- **What:** general-purpose subagents get model "opus" only to write code or to review data, auth
+  or money paths. Workflow, docs and other reviews stay on the Sonnet default. To fit, the
+  "Changing the workflow" sentence drops its file list ("this repo" covers it).
+- **Why:** the owner asked for it. Over 2 days, general-purpose on Opus was $41.27 (9.7% of
+  spend, $0.066 per request) against $0.034 per request on Sonnet; the workflow-file reviews that
+  day were Opus dispatches. The saving is unmeasured.
+
+## 2026-11-02 — the workflow gate is live
+- **What:** `hooks/workflow-gate.py` is wired in settings.json PreToolUse:
+  - Bash `workflow-declare`: validates the declaration and records it.
+  - Bash `git commit`: refuses a commit without a `Workflow:` trailer.
+  - `Edit|Write|NotebookEdit|MultiEdit`: refuses an edit until the session has declared; refuses
+    full and shrunk on the integration branch (detached at its tip counts, a stopped rebase of a
+    branch does not); limits none to a project's `Data paths` line.
+  - Never gated: Markdown, a top-level `docs/`, gitignored files, `~/.claude`, and repos that are
+    neither in PROJECTS nor name dev-workflow.md in their CLAUDE.md. Fails open on any error.
+  - Declarations are keyed by session, plus `agent_id` for a subagent (which falls back to its
+    parent's), and by the repo's git common dir, so one made in the main checkout covers its
+    worktrees.
+- **Why:** the owner asked to build it and then to wire it.
+- **Tests:** 76 cases against a throwaway HOME, including one per finding of a fresh review (9
+  fixed: heredoc bodies read as commands, rebase seen as main, subshell and chained `cd`,
+  message-reuse flags, a state-file race, ignored files, the hint, worktree-named verdicts, data
+  paths). Live after wiring, a Write in a gated repo and a `git commit --dry-run` (plain and
+  heredoc message) were refused.
+- **Limits:** edits made through Bash are not seen; `shrunk 1-3` with any reason reaches code;
+  `full` cannot pass until a plan-reality-check verdict is logged with its plan path; whether a
+  subagent's hook input carries the parent's session_id is unproven (the fallback covers both);
+  about 0.2 s per Edit; state files under `~/.claude/hooks/state/workflow/` are never pruned.
+
+## 2026-11-02 — scorecard --no-record writes nothing
+- **What:** `scorecard.py --no-record` prints the report to stdout and writes neither the report
+  file nor the history.
+- **Why:** it skipped only the history append, so each test run replaced `scorecard-<month>.md`;
+  that happened twice on 2 Nov and both times the file was restored from a backup.
+
+## 2026-11-02 — fixes from the post-landing review of the declare/trailer change
+- **What:**
+  - The verdict-line schema in `dev-workflow.md` names `"plan"` (plan-reality-check only) and says
+    project is the repo directory name. To fit, it drops "which `scorecard.py` counts"; the file
+    is at 100 lines and 1,299 words, both at the limit.
+  - `workflow-declare` refuses a plan path that is absolute or contains whitespace, and looks for
+    the plan from the repo root, not the current directory.
+  - `scorecard.py` normalises plan paths before matching them, and shows n/a for a history line
+    with no trailer counts.
+  - The entry below now says the gate does not see edits made through Bash.
+- **Why:** a post-landing review found these. The schema had no plan key, so sessions would
+  invent one and "checked" would stay 0; a path with a space or a leading `/` would print a
+  trailer the scorecard counts as missing.
+
+## 2026-11-02 — declare the path before the first edit; Workflow: commit trailer
+- **What:**
+  - `dev-workflow.md`: before its first edit, a session runs `workflow-declare` (full with its
+    plan, shrunk 1–3 with why, or none with why). Each commit ends with the `Workflow:` trailer
+    the declaration prints. Dispatches that edit run it first.
+  - Stage 3's verdict line gains the plan path, so a `full` can be matched to its check.
+  - `bin/workflow-declare` checks the form and prints the trailer.
+  - `scorecard.py` reports each project's trailer shares: full, shrunk, none, missing. For full,
+    it checks that the plan exists at that commit and that a check names it. For full and
+    shrunk, it counts bodies that quote a failing run.
+  - `scorecard.py` decodes git output leniently: non-UTF-8 blame output crashed the churn count.
+  - To fit the budget, the session-size figures and the cost-plugin history are now pointers.
+- **Not yet:** the two hooks. One records the declaration; the other refuses Edit, Write and
+  NotebookEdit before a declaration, refuses full and shrunk on the integration branch, and limits
+  none to data paths. Both wait for the owner's approval.
+- **Limits:** the trailer is self-reported, and `shrunk 1-3` with any reason always reaches code;
+  that is the open door, and the scorecard watches its share. Edits made through Bash (`sed -i`,
+  heredocs, `python -c`) the gate does not see. The first month's reading is a baseline: October
+  reads 0 trailers in 1,593 commits across 12 projects.
+- **Why:** the owner asked for a marker that shows the workflow is followed, then for it to be
+  enforced before the work rather than after. In the 14 days to 2 Nov, about 18 of 448 commits in
+  seven projects quoted a failing test, and the verdict log had 3 lines.
+
+## 2026-11-02 — software-audit-skill, thepmcode decision-support, longview-skills, your-token and Overflow reviewed, all rejected
+- **What:** five `REVIEWED.md` entries. Nothing else changes.
+- **Why:** the owner asked for each review.
+  - software-audit-skill: per-change and whole-codebase security audits are covered
+    (`security-review`, `/security-audit`), its broad triggers would compete with stage 6, and
+    its install path is one Claude Code does not load.
+  - thepmcode: no owner prompt asks for this kind of decision grilling, its useful modes are in
+    brainstorming and `GRILLING.md`, and its description would compete with stage 2.
+  - longview-skills: its coding skills duplicate stages 4–6, forty more descriptions would widen
+    triggering, and its evidence is self-graded.
+  - your-token: it estimates token use that telemetry and `claude-cost` already measure, assumes a
+    5-minute cache that measured an hour here, and skips the weekly limit.
+  - Overflow: an exchange for spare subscription capacity, not a workflow tool; earning means
+    running strangers' issue text and commands, and no idle capacity is measured.
+
+## 2026-11-02 — jolitz reviewed, rejected; its idea adopted
+- **What:** a `REVIEWED.md` entry. A user-level hook now also refuses emptying the production
+  cache over SSH, the idea recorded as adopted. The hook is not versioned here and settings.json
+  is unchanged.
+- **Why:** the owner asked for the review, then said to add the guard. There are no
+  root-administered servers here, and jolitz pulls and runs its own updates on every session
+  start. The rule "never empty the production cache" (it empties a replay guard, locks and rate
+  limiters) had no mechanical check. Tested on 11 sample commands; not covered: a clear run from a
+  script on the server.
+
+## 2026-11-02 — "context sockets" post reviewed, no change; Sketchy reviewed, rejected
+- **What:** two `REVIEWED.md` entries. `deps/` also picked up the provenance comment now in the
+  installed better-clear-language SKILL.md.
+- **Why:** the owner asked for each review.
+  - Sockets: the pattern is already how `dev-workflow.md`, the project Workflow sections and the
+    knowledge bundles work. The missing provenance comment, found while checking, would have left
+    the skill untracked by the monthly upstream check.
+  - Sketchy: no dashboard-project prompt asks for a diagram, its chat skill loads self-updating code
+    from a CDN beside what could be confidential figures, and existing tools cover the occasional
+    diagram.
+
+## 2026-11-02 — better-clear-language adopted for dashboard text; AlanChen4/skills reviewed
+- **What:** the `REVIEWED.md` AlanChen4/skills entry, first "rejected but one optional trial",
+  became "partly adopted" with the trial result. `dev-workflow.md` does not change.
+- **Why:** the owner tried better-clear-language on dashboard tooltips and said to adopt it. Only
+  that skill could help, on text colleagues read; the other three are rejected.
+
+## 2026-11-02 — master-console, claude-vibe-squad, Comet, open-design-agent-kit and cogit reviewed, all rejected
+- **What:** five `REVIEWED.md` entries, plus a correction to cogit's worktree claim (under the
+  ignore policy worktree sessions write the main checkout's gitignored `.cogit/`, changing no
+  tracked file; under the commit policy each worktree keeps its own record). Verdicts unchanged.
+- **Why:** the owner asked for each review.
+  - master-console and claude-vibe-squad would replace `dev-workflow.md` rather than slot in;
+    master-console registers 63 tool hooks and is Windows-first, and claude-vibe-squad's cross-
+    family review needs three other CLIs and its optional launchd agents run checkout code with
+    the user's secrets.
+  - Comet is harmless but shows little not already on screen, and its `git status` runs can
+    contend for `index.lock` in shared checkouts. The owner may still install it for fun.
+  - open-design-agent-kit: the main project already has a design system, most entries are other
+    brands' looks, and the generic ones add nothing a throwaway mockup needs.
+  - cogit: its git hooks would edit tracked hooks and stage its record with every commit, and it
+    adds hooks to every turn.
+
 ## 2026-11-01 — general-purpose subagents default to Sonnet
 - **What:** an `agents/general-purpose.md` override (model sonnet, all tools, a short report-back
   prompt). Stage 4 says to pass model "opus" per dispatch for implementation and review.

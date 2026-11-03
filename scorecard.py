@@ -4,7 +4,7 @@ next month's numbers. Read-only on every repo.
 
     scorecard.py                   the previous calendar month
     scorecard.py --month 2026-10   a given month
-    scorecard.py --no-record       print the report path but append nothing to the history
+    scorecard.py --no-record       print the report to stdout; write no report and no history
 
 Writes ~/.claude/skill-update-reports/scorecard-<YYYY-MM>.md and appends one JSON line to
 ~/.claude/workflow-metrics.jsonl (the history outlives otelcol's ~10 days of log rotation).
@@ -17,6 +17,10 @@ Per project in check-names.py's PROJECTS:
   traps     new TRAPS_DIR/*.md files added in the month (repeated traps cannot be
             detected reliably from commit text, so this counts new ones instead)
   reviews   from ~/.claude/review-verdicts.jsonl, which review dispatchers append to
+  trailers  each month commit's `Workflow:` trailer (full, shrunk, none, missing); for full, whether
+            its plan exists at that commit and has a plan-reality-check line naming it; for full
+            and shrunk, whether the body quotes a failing run (a rough grep). Self-reported, so
+            the cross-checks are the point; the first month (Nov 2026) is a baseline only.
 
 One developer and noisy numbers: only large effects will show. The report sets each reading
 beside the previous month's and the CHANGELOG entries in between; it never claims cause."""
@@ -59,7 +63,7 @@ def transcript_dir(path):
 
 
 def git(repo, *args):
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True).stdout
+    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, errors="replace").stdout
 
 
 def commits(repo, ref, start, end):
@@ -98,7 +102,7 @@ def churn(repo, ref, start, end, now):
         # date would mean that date at the current time of day and cut off the morning's commits.
         since = f"{(day - dt.timedelta(days=1)).isoformat()} 00:00:00 +0000"
         run = subprocess.run(["git", "-C", str(repo), "blame", "-s", "-l", f"--since={since}",
-                              snap, "--", path], capture_output=True, text=True)
+                              snap, "--", path], capture_output=True, text=True, errors="replace")
         if run.returncode:  # gone or renamed by the snapshot: can't tell churn from a move
             return None
         alive = collections.Counter(line[:40] for line in run.stdout.splitlines())
@@ -122,9 +126,52 @@ def new_traps(repo, ref, start, end):
     return len({p for p in out.splitlines() if p.endswith(".md")})
 
 
+TRAILER = re.compile(r"^Workflow: (full \(plan: (\S+)\)|shrunk [1-3](?:-[1-3])?(?:,[1-3](?:-[1-3])?)* \(.+\)|none \(.+\))\s*$", re.M)
+RED_RUN = re.compile(r"red run|FAIL|failed as expected|Tests: .*failed")
+
+
+def plan_key(path):
+    """A repo-relative plan path in one spelling, so `./docs/p.md` and `docs/p.md` match."""
+    return os.path.normpath(str(path).strip())
+
+
+def checked_plans(project):
+    """Plan paths a plan-reality-check line in the verdict log names for this project."""
+    out = set()
+    for line in VERDICTS.read_text().splitlines() if VERDICTS.exists() else []:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if "plan-reality-check" in str(row.get("agent", "")) and row.get("project") == project and row.get("plan"):
+            out.add(plan_key(row["plan"]))
+    return out
+
+
+def trailers(repo, ref, start, end):
+    out = collections.Counter()
+    plans = checked_plans(repo.name)
+    log = git(repo, "log", ref, "--no-merges", "--format=%H%x00%B%x1e",
+              f"--since={int(start.timestamp())}", f"--until={int(end.timestamp())}")
+    for entry in filter(str.strip, log.split("\x1e")):
+        sha, _, body = entry.strip().partition("\0")
+        m = TRAILER.search(body)
+        kind = m.group(1).split()[0] if m else "missing"
+        out[kind] += 1
+        if kind == "full":
+            plan = m.group(2)
+            out["full_plan_exists"] += subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{sha}:{plan}"],
+                                                      capture_output=True).returncode == 0
+            out["full_plan_checked"] += plan_key(plan) in plans
+        if kind in ("full", "shrunk"):
+            out["red_quoted"] += bool(RED_RUN.search(body))
+    return dict(out)
+
+
 def reviews(start, end):
-    """agent -> [n, flagged, findings]; flagged = verdict polish/rework, findings = summed counts."""
-    out = collections.defaultdict(lambda: [0, 0, 0])
+    """agent -> [n, flagged, findings, hook]; flagged = verdict polish/rework/fix first,
+    findings = summed counts, hook = lines log-review-verdict.py wrote."""
+    out = collections.defaultdict(lambda: [0, 0, 0, 0])
     if not VERDICTS.exists():
         return out
     for line in VERDICTS.read_text().splitlines():
@@ -139,8 +186,9 @@ def reviews(start, end):
         if start <= when < end:
             agg = out[row.get("agent", "?")]
             agg[0] += 1
-            agg[1] += row.get("verdict") in ("polish", "rework")
+            agg[1] += row.get("verdict") in ("polish", "rework", "fix first")
             agg[2] += count
+            agg[3] += row.get("source") == "hook"
     return out
 
 
@@ -245,9 +293,10 @@ def main():
             commits_in_month=len(commits(repo, ref, start, end)),
             churn_added=added, churn_lines=churned, churn_files_skipped=skipped,
             churn_share=round(churned / added, 3) if added else None,
-            new_traps=new_traps(repo, ref, start, end) if (repo / TRAPS_DIR).is_dir() else None)
+            new_traps=new_traps(repo, ref, start, end) if (repo / TRAPS_DIR).is_dir() else None,
+            trailers=trailers(repo, ref, start, end))
     unassigned = round(sum(c for p, c in spend.items() if p is None), 2)
-    review_rows = {a: dict(n=n, flagged=f, findings=k) for a, (n, f, k) in reviews(start, end).items()}
+    review_rows = {a: dict(n=n, flagged=f, findings=k, hook=h) for a, (n, f, k, h) in reviews(start, end).items()}
 
     previous = None
     if HISTORY.exists():
@@ -301,11 +350,29 @@ def main():
               "checked 14 to 15 days later (at the end of the 14th day after its UTC date). Files gone "
               "or renamed by then are skipped.", "",
               "## Review hit rate", ""]
-    lines += ([f"- {a}: {r['n']} reviews, {r['flagged']} polish/rework, {r['findings']} findings"
+    lines += ([f"- {a}: {r['n']} reviews ({r.get('hook', 0)} logged by hook), {r['flagged']} flagged "
+               f"(polish, rework or fix first), {r['findings']} findings"
                for a, r in review_rows.items()] or ["No data: nothing logged to review-verdicts.jsonl this month."])
+    lines += ["", "## Workflow trailers", "",
+              "Self-reported in each commit. `shrunk` is the open door: watch its share beside the "
+              "red-run rate, since stage 4 applies either way. Baseline only until Dec 2026.", "",
+              "| Project | Commits | full | shrunk | none | missing | full: plan exists / checked | full+shrunk quoting a red run |",
+              "|---|---|---|---|---|---|---|---|"]
+    for p, r in rows.items():
+        if "trailers" not in r:  # a history line from before trailers were counted
+            lines.append(f"| {p.split('/')[-1]} | n/a | n/a | n/a | n/a | n/a | n/a | n/a |")
+            continue
+        t = r["trailers"]
+        n = sum(t.get(k, 0) for k in ("full", "shrunk", "none", "missing"))
+        lines.append(f"| {p.split('/')[-1]} | {n} | {t.get('full', 0)} | {t.get('shrunk', 0)} | {t.get('none', 0)} | "
+                     f"{t.get('missing', 0)} | {t.get('full_plan_exists', 0)} / {t.get('full_plan_checked', 0)} | "
+                     f"{t.get('red_quoted', 0)} of {t.get('full', 0) + t.get('shrunk', 0)} |")
     lines += ["", "## Workflow changes since the previous reading", ""]
     lines += [f"- {c}" for c in changelog_between(prev_day, (end - dt.timedelta(days=1)).date())] or ["- none"]
 
+    if args.no_record:  # a test run must not replace the month's recorded report
+        print("\n".join(lines))
+        return
     REPORTS.mkdir(parents=True, exist_ok=True)
     report = REPORTS / f"scorecard-{args.month}.md"
     report.write_text("\n".join(lines) + "\n")
