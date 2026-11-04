@@ -14,6 +14,9 @@ This public copy starts at its first sync; earlier history lives in the private 
   already ruled out" in `subagents.md` covers one dispatch only. A cheap bet from a Reddit post
   with no evidence behind it; how often work is repeated this way is unmeasured. The owner
   approved it in chat.
+- **Also:** to stay within the 1,300-word budget, `dev-workflow.md` drops the auto-compact line
+  and the clause saying `scorecard.py` counts logged verdicts. The rule took this copy to 1,324
+  words. Neither is in the private source copy, and `scorecard.py` itself is unchanged.
 
 ## 2026-11-03 — dev-workflow.md no longer names the business plugins' skills
 - **What:** removed the `operations`, `product-management`, `productivity` and `data` skill names.
