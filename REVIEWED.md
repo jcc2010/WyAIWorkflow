@@ -12,6 +12,62 @@ developer an adoption's effect is read beside the next month's scorecard, never 
 cause; until a reading exists it is judged by feel and by recorded defects in each project's
 knowledge docs.
 
+## 2026-11-04 — r/ClaudeWorkflows: "Integrate Playwright MCP with Claude Code for Browser Automation and Persistent Sessions" (Reddit)
+- **Source:** an r/ClaudeWorkflows post, reviewed for one dashboard project only. Original source
+  it links to (r/ClaudeCode):
+  https://www.reddit.com/r/ClaudeCode/comments/1xmp54n/is_there_an_unleashed_claude_mcpextension_for/19s2q9kmh8awy/.
+  Only the post was read, not the thread. Playwright MCP was not installed or run.
+- **Proposal:** `claude mcp add playwright npx @playwright/mcp@latest`, add `mcp__playwright` to
+  `permissions.allow`, and log in once for a persistent session. Optionally use a
+  `--user-data-dir` profile or `--extension` to attach to open Chrome, and a separate profile to
+  limit prompt injection.
+- **Verdict:** rejected for that project; no rule or settings change.
+- **Reason:** the project already has what this adds, and the setup conflicts with its rules.
+  - **Already covered.** The project has a real Playwright test suite, and the built-in browser
+    appears in 43 of its 85 transcript files; Playwright MCP in none. A one-off measurement can be
+    a throwaway script on the installed Playwright. Its scheduled refresh runs with no Claude
+    session, so it could not use an MCP server.
+  - **Conflicts.** `@latest` runs whatever was published most recently on each start, against the
+    project's rule that a dependency is at least two weeks old. The blanket allow removes prompts
+    for every browser action, including on pages read from the web, while a saved login stays in
+    the profile. A dedicated profile limits the damage but does not stop prompt injection.
+  - **Sensitive data.** Page contents reach the transcript. The built-in browser has the same
+    exposure, so this is not unique to the MCP, but an unattended prompt-free browser makes it
+    easier to miss.
+- **Reconsider only if:** a subagent or scheduled task truly must drive a browser and cannot use
+  the built-in one. That limit is untested. Then pin a version, use an empty profile with no
+  logins, and allow only the tools needed.
+
+## 2026-11-04 — r/ClaudeWorkflows: "Structured Context Handoff for Restarting Claude Code Mid-Feature" (Reddit)
+- **Source:** an r/ClaudeWorkflows post. Original source it links to (r/ClaudeCode):
+  https://www.reddit.com/r/ClaudeCode/comments/1xndd4y/when_you_restart_claude_code_midfeature_what_do/.
+  Only the post's summary was read, not the thread. The post itself calls this a proposed
+  exercise, not a tested result.
+- **Proposal:** before ending a session, write a note with Done, Not checked, Decision, Tried and
+  rejected, Next; link diffs and checks; have the fresh session restate what is done and
+  unchecked before its next step.
+- **Verdict:** rejected; no change to `dev-workflow.md`.
+- **Reason:** the note repeats what is already carried, and its one new idea proves little.
+  - **Already carried.** Compaction summaries and session briefs hold most of the note.
+    `subagents.md` already has "what is already ruled out" and an UNVERIFIED status. The
+    session-size rule covers when to start a new session.
+  - **Rejected attempts.** Stage 8's dead-end line, added today, covers the ones that should
+    outlive a session.
+  - **The restate step is the only new idea.** It shows the new session understood the note, not
+    that the note is true, and it costs a turn. `subagents.md` section 3, "Check the return
+    before you trust it", is stronger: check the diff and rerun the check.
+
+## 2026-11-04 — r/ClaudeWorkflows: agent memory post (Reddit)
+- **Source:** a Reddit post on agent memory, with no evidence behind it beyond the author's
+  impression. Original source, which the r/ClaudeWorkflows post links to (r/ClaudeCode):
+  https://www.reddit.com/r/ClaudeCode/comments/1xnee5q/how_are_you_handling_crosssession_memory_in_large/19s422qb5bb2b/.
+- **Verdict:** partly adopted, as a cheap bet and not a proven fix: stage 8 records debugging
+  dead ends ("tried X, failed because Y").
+- **Reason:** a failed attempt that never becomes a trap is lost when the session ends. How often
+  work is actually repeated this way has not been measured. Rejected: a separate decision log, a
+  `supersedes` field and scheduled pruning. Knowledge docs here already mark a reversed rule
+  deprecated with a link to its successor, and deliberately keep it.
+
 ## 2026-11-03 — Anthropic: Message threads (Messages API, public beta)
 - **Source:** Anthropic's article. With a `thread` parameter a client sends the whole
   conversation once, then only the new messages plus the previous response's ID. Threads are held

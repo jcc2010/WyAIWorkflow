@@ -6,6 +6,15 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-04 — debugging dead ends get recorded
+- **What:** stage 8 now says debugging that ends without a fix leaves "tried X, failed because
+  Y", two lines at most, as a trap in the project's knowledge docs, or as a memory if the project
+  has none. `REVIEWED.md` also logs two posts as rejected, with no rule change.
+- **Why:** a failed attempt that never becomes a trap is lost when the session ends; "what is
+  already ruled out" in `subagents.md` covers one dispatch only. A cheap bet from a Reddit post
+  with no evidence behind it; how often work is repeated this way is unmeasured. The owner
+  approved it in chat.
+
 ## 2026-11-03 — dev-workflow.md no longer names the business plugins' skills
 - **What:** removed the `operations`, `product-management`, `productivity` and `data` skill names.
   Stage 1 points at the owner's request or the project's roadmap. Stage 7 says to give the owner

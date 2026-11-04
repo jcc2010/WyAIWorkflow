@@ -18,14 +18,13 @@ Workflow: trailer it prints.
 | 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen; any review agent dispatched here logs its verdict (below) | The project's full suites exited 0, and you have screenshots of visual changes |
 | 6. Review | `code-review` (medium; high for data, auth or money paths), `simplify`; `security-review` for auth, upload, payment or API surface | Every finding is fixed or explicitly declined with a reason |
 | 7. Ship | `superpowers:finishing-a-development-branch`, then the project's deploy block (its Workflow section names the substitute where there is none); before a migration on live data or an auth change, give the owner its impact and rollback plan | Deployed and checked live, or the owner chose to hold |
-| 8. Record | The project's knowledge docs or CLAUDE.md, for a trap found or a procedure that will recur | The lesson lives in one place a later session will read |
+| 8. Record | The project's knowledge docs or CLAUDE.md, for a trap found or a procedure that will recur; debugging that ends without a fix leaves "tried X, failed because Y" (two lines at most) as a trap, or a memory if the project has none | The lesson lives in one place a later session will read |
 | 9. Retro | `/retro`, typed by the owner at the end of a session; it suggests missing automated checks, CLAUDE.md rules that belong in a check, and wasteful tool calls | Each suggestion applied (a check, a trap or memory, a pruned rule) or declined |
 
 A hook logs plan-reality-check and design-critic verdicts; any other review agent you dispatch
 (a fresh reviewer) gets its verdict logged by you: one line
 `{"date", "agent", "project", "verdict" or "count"}` (plus `"plan"` for plan-reality-check;
-project is the repo directory name) appended to `~/.claude/review-verdicts.jsonl`, which
-`scorecard.py` counts.
+project is the repo directory name) appended to `~/.claude/review-verdicts.jsonl`.
 
 Size it before you start: name a multi-step task small (under an hour), medium (a few hours)
 or large (a day or more). A large one gets an estimate and a smaller first cut proposed to the
@@ -65,8 +64,6 @@ session alone was 35%. Reads of cached context, not output, were most of the bil
   suggest `/compact` or a new session for the next one. Mid-task, keep going.
 - Unrelated work starts in a new session; a long one makes every turn re-read context the new
   task never needs. Standing sessions keep to their own thread.
-- An earlier auto-compact (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`) is a lever; measure what it saves
-  on your own log before and after setting it.
 
 ## Changing the workflow
 
