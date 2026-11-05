@@ -17,15 +17,16 @@ case "${1:-}" in
     esac
     top=$(git rev-parse --show-toplevel 2>/dev/null) || { echo "workflow-declare: not in a git checkout" >&2; exit 1; }
     [ -f "$top/$3" ] || { echo "workflow-declare: no plan at $3 in $top" >&2; exit 1; }
-    trailer="Workflow: full (plan: $3)" ;;
+    trailer="Workflow: full (plan: $3)"; marker=1 ;;
   shrunk)
     echo "${2:-}" | grep -Eq '^[1-3](-[1-3])?(,[1-3](-[1-3])?)*$' || { echo "workflow-declare: only stages 1-3 shrink" >&2; usage; }
     [ -n "${3:-}" ] || usage
-    trailer="Workflow: shrunk $2 ($3)" ;;
+    trailer="Workflow: shrunk $2 ($3)"; marker=1 ;;
   none)
     [ -n "${2:-}" ] || usage
     trailer="Workflow: none ($2)" ;;
   *) usage ;;
 esac
 echo "Declared. End each commit message with:"
+[ -z "${marker:-}" ] || echo "Fixes #N (the issue this fixes, labelled bug and cause:<trap name>), or Bug: none"
 echo "$trailer"

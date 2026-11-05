@@ -21,6 +21,12 @@ Per project in check-names.py's PROJECTS:
             its plan exists at that commit and has a plan-reality-check line naming it; for full
             and shrunk, whether the body quotes a failing run (a rough grep). Self-reported, so
             the cross-checks are the point; the first month (Nov 2026) is a baseline only.
+  issues    from the project's GitHub issues, opened in the month: bug, bug with no cause:<slug>,
+            recurrences (a cause:<slug> issue with an earlier one of that cause), workflow-skip
+            (skip_audit.py files those). n/a where GitHub can't answer.
+  late      sessions workflow-gate.py logged in the month, so retries count once: a commit refused
+            with nothing declared, or code already changed at a first declaration (in a shared
+            checkout, maybe a peer's).
 
 One developer and noisy numbers: only large effects will show. The report sets each reading
 beside the previous month's and the CHANGELOG entries in between; it never claims cause."""
@@ -32,6 +38,8 @@ REPORTS = HOME / ".claude/skill-update-reports"
 HISTORY = HOME / ".claude/workflow-metrics.jsonl"
 VERDICTS = HOME / ".claude/review-verdicts.jsonl"
 TRAPS_DIR = "docs/knowledge/traps"  # where a project records one file per trap; "new traps" counts files added here
+LATE = HOME / ".claude/workflow-late-declarations.jsonl"  # workflow-gate.py appends
+ISSUE_LIMIT = 1000  # a list this long may be cut short, so it counts as no answer
 CHURN_DAYS = 14
 BIG_CONTEXT = 400_000
 UTC = dt.timezone.utc
@@ -168,6 +176,59 @@ def trailers(repo, ref, start, end):
     return dict(out)
 
 
+def github_slug(repo):
+    """owner/name from the origin remote, or None."""
+    m = re.search(r"github\.com[:/](.+?)(?:\.git)?/?$", git(repo, "remote", "get-url", "origin").strip())
+    return m.group(1) if m else None
+
+
+def issue_summary(rows, start, end):
+    """Counts for issues opened in [start, end); a cause's earlier issues may predate the month."""
+    out = dict(bugs=0, uncaused=0, recurrences=0, skips=0, causes=collections.Counter())
+    seen = set()
+    for row in sorted(rows, key=lambda r: r["createdAt"]):
+        labels = {label["name"] for label in row["labels"]}
+        causes = {label[len("cause:"):] for label in labels if label.startswith("cause:")}
+        opened = dt.datetime.fromisoformat(row["createdAt"].replace("Z", "+00:00"))
+        if start <= opened < end:
+            out["bugs"] += "bug" in labels
+            out["uncaused"] += "bug" in labels and not causes
+            out["skips"] += "workflow-skip" in labels
+            out["recurrences"] += bool(causes & seen)
+            out["causes"].update(causes)
+        seen |= causes
+    out["causes"] = dict(sorted(out["causes"].items()))
+    return out
+
+
+def issues(repo, start, end):
+    """issue_summary for the repo's GitHub issues, or None where GitHub can't answer."""
+    slug = github_slug(repo)
+    if not slug:
+        return None
+    try:
+        run = subprocess.run(["gh", "issue", "list", "-R", slug, "--state", "all", "--limit", str(ISSUE_LIMIT),
+                              "--json", "createdAt,labels"], capture_output=True, text=True, errors="replace", timeout=60)
+        rows = json.loads(run.stdout) if run.returncode == 0 else None
+        return issue_summary(rows, start, end) if rows is not None and len(rows) < ISSUE_LIMIT else None
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        return None
+
+
+def late_declarations(project, start, end):
+    """Distinct sessions the gate logged for this project in [start, end)."""
+    sessions = set()
+    for line in LATE.read_text().splitlines() if LATE.exists() else []:
+        try:
+            row = json.loads(line)
+            when = dt.datetime.strptime(row["date"], "%Y-%m-%dT%H:%M:%S%z")
+        except (ValueError, KeyError, TypeError):
+            continue
+        if row.get("project") == project and start <= when < end:
+            sessions.add(row.get("session"))
+    return len(sessions)
+
+
 def reviews(start, end):
     """agent -> [n, flagged, findings, hook]; flagged = verdict polish/rework/fix first,
     findings = summed counts, hook = lines log-review-verdict.py wrote."""
@@ -294,7 +355,8 @@ def main():
             churn_added=added, churn_lines=churned, churn_files_skipped=skipped,
             churn_share=round(churned / added, 3) if added else None,
             new_traps=new_traps(repo, ref, start, end) if (repo / TRAPS_DIR).is_dir() else None,
-            trailers=trailers(repo, ref, start, end))
+            trailers=trailers(repo, ref, start, end), issues=issues(repo, start, end),
+            late=late_declarations(repo.name, start, end))
     unassigned = round(sum(c for p, c in spend.items() if p is None), 2)
     review_rows = {a: dict(n=n, flagged=f, findings=k, hook=h) for a, (n, f, k, h) in reviews(start, end).items()}
 
@@ -367,6 +429,18 @@ def main():
         lines.append(f"| {p.split('/')[-1]} | {n} | {t.get('full', 0)} | {t.get('shrunk', 0)} | {t.get('none', 0)} | "
                      f"{t.get('missing', 0)} | {t.get('full_plan_exists', 0)} / {t.get('full_plan_checked', 0)} | "
                      f"{t.get('red_quoted', 0)} of {t.get('full', 0) + t.get('shrunk', 0)} |")
+    lines += ["", "## Bugs and workflow skips", "",
+              "From each repo's GitHub issues opened this month. A recurrence is a cause:<slug> issue with an "
+              "earlier one of that cause. Cause labels are the agent's judgement: read the list for drift "
+              "(two names for one cause, or a cause too broad to mean anything).", "",
+              "| Project | Bugs | No cause | Recurrences | Workflow skips | Late declarations | Causes |", "|---|---|---|---|---|---|---|"]
+    for p, r in rows.items():
+        i = r.get("issues")
+        if not i:  # no GitHub remote, issues off, gh failed, or a history line from before this was counted
+            lines.append(f"| {p.split('/')[-1]} | n/a | n/a | n/a | n/a | {r.get('late', 'n/a')} | n/a |")
+            continue
+        causes = ", ".join(f"{c} ({n})" for c, n in i["causes"].items()) or "none"
+        lines.append(f"| {p.split('/')[-1]} | {i['bugs']} | {i['uncaused']} | {i['recurrences']} | {i['skips']} | {r.get('late', 'n/a')} | {causes} |")
     lines += ["", "## Workflow changes since the previous reading", ""]
     lines += [f"- {c}" for c in changelog_between(prev_day, (end - dt.timedelta(days=1)).date())] or ["- none"]
 

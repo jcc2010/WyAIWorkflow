@@ -18,12 +18,14 @@ discussion for ideas and questions.
 | [`CHANGELOG.md`](CHANGELOG.md) | Why each rule exists, one entry per change, with a cited reason or "reason not recorded". |
 | [`REVIEWED.md`](REVIEWED.md) | Every outside skill, repo or piece of feedback reviewed, with the verdict and why, so nothing is re-reviewed by accident. |
 | [`scorecard.py`](scorecard.py) | The monthly scorecard: cost per commit, rework churn, new trap docs, review hit rate and `Workflow:` trailer shares per project, appended to a history file. Reads `PROJECTS` from `check-names.py`. |
+| [`skip_audit.py`](skip_audit.py) | Daily audit: one `workflow-skip` issue per commit that skipped the workflow, in that project's private repo. Dry run unless given `--file`. Set `START` to when your gate went live. |
+| [`tests/`](tests) | `GATE=hooks/workflow-gate.py python3 -m unittest discover -s tests`: no network. |
 | [`bin/claude-cost`](bin/claude-cost) | Where Claude Code spend goes, from a local OpenTelemetry event log: by project, by agent and model, by context size, and cache rebuilds after idle gaps. Put it on your `PATH`; `scorecard.py` uses it. |
 | [`agents/general-purpose.md`](agents/general-purpose.md) | Overrides the built-in general-purpose subagent: defaults to Sonnet (pass model "opus" per dispatch to review data, auth or money paths), carries the git and deploy rules a subagent must follow, and returns a fixed report (status, changes, checks with exit codes, blockers). |
 | [`agents/implementer.md`](agents/implementer.md) | A subagent pinned to Opus that writes code for one task, test first, and returns the same fixed report plus the red run. |
 | [`agents/plan-reality-check.md`](agents/plan-reality-check.md) | A read-only subagent that checks a written plan against the code before anyone builds it: references that don't exist, claims the code contradicts, helpers that duplicate existing ones. |
 | [`bin/workflow-declare`](bin/workflow-declare) | Declares a session's path before its first edit (`full` with a plan, `shrunk 1-3` with a reason, or `none` with a reason) and prints the `Workflow:` trailer each commit ends with. Put it on your `PATH`. |
-| [`hooks/workflow-gate.py`](hooks/workflow-gate.py) | A PreToolUse hook: records declarations, refuses an edit before one, refuses a commit whose trailer doesn't match its files, and refuses a subagent's `git stash`, `git add -A` / `.` and `git commit -a`. Fails open. |
+| [`hooks/workflow-gate.py`](hooks/workflow-gate.py) | A PreToolUse hook: records declarations, refuses an edit before one, refuses a commit whose trailer doesn't match its files or that lacks a bug marker, refuses `full` and `shrunk` on the integration branch, logs late declarations, and refuses a subagent's `git stash`, `git add -A` / `.` and `git commit -a`. Fails open. |
 | [`hooks/log-review-verdict.py`](hooks/log-review-verdict.py) | A SubagentStop hook that logs `plan-reality-check` and design-critic verdicts to `~/.claude/review-verdicts.jsonl`, which `scorecard.py` reads. |
 
 ## How it's wired
@@ -107,6 +109,10 @@ from data that already exists, so each reading sits beside the last. Per project
 - **Review hit rate:** how often the design critic says polish or rework, and findings per run
   from the plan checker and the fresh reviewer. Each dispatch appends its verdict to a log;
   without that, verdicts are read once and lost.
+- **Bugs and skips:** from each repo's GitHub issues opened that month: bugs, recurrences (a
+  `cause:<slug>` issue with an earlier one of that cause) and `workflow-skip` issues, plus sessions
+  the gate logged as declaring late. Cause labels are the agent's judgement, so they are listed for
+  review.
 
 The report sets each reading beside the workflow changes that landed since the last one, which
 says only that they coincided, never that one caused the other. With one developer only large

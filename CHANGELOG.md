@@ -6,6 +6,76 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-05 — stage 4: sweep a bug's shape after the fix (trial)
+- **What:** one line in stage 4: after a fix, grep the repo for the bug's shape, judge every hit,
+  keep a guard test if it can recur.
+- **Why:** the owner chose it in chat. No written rule said this outside a security-audit skill.
+- **Limits:** a trial, and nothing enforces it. In the one project checked, the two greppable
+  candidates showed no new bug. The source's counts are tuned on its own repos and are not support.
+  Judge it monthly by counting real hits by hand; none means remove the line.
+
+## 2026-11-05 — stage 6: assume a write runs twice at once (trial)
+- **What:** one line in stage 6 for a write that reads first, must be unique, or calls a payment
+  or email service. To make room here, `dev-workflow.md` drops the `Recurring checks` line, the
+  session-size figures and two parentheticals. The file is at its word limit, so the next rule
+  must delete one first.
+- **Why:** the owner chose it in chat. No rule covered application writes, and this bug had
+  already happened: a double-clicked button saved two items.
+- **Limits:** a trial, and nothing enforces it. It fires at review, after the code exists. Evidence
+  that the line changes behaviour is weak: the source's concurrency tasks failed 4 of 45 runs
+  without its skill and 2 of 45 with it. Judge it at a later retro: did it catch an overlap bug, or
+  only cost time?
+
+## 2026-11-05 — the gate reads the shell: eight findings from a fresh review
+- **What:** one shell scanner replaces the gate's regex splitter, so only a commit's own -m, -F,
+  --trailer and heredoc count as its message, a subshell's `cd` stays in the subshell, and a commit
+  whose repo can't be worked out skips the gate. `--no-edit` or `-C` exempts only with no -m or -F.
+  A first declaration writes its state before logging, runs no git call per file and logs once.
+  Finishing a cherry-pick or revert is exempt from the branch rule, as a merge is. The scorecard's
+  late column counts sessions.
+- **Why:** 800 changed files took 21.29s against a 10s hook timeout, and now take 0.4s. A marker in
+  another command's heredoc passed, and `git commit -m x --no-edit` passed with no trailer. Replay
+  of 2,803 recorded commands through the parser: no crash, no trailer or marker lost that should
+  count.
+- **Limits:** 67 of 2,820 recorded commits (2.4%) have a target the gate can't resolve and are now
+  skipped; the audit is the backstop. `-m "$MSG"` is now refused and a piped `-F -` now fails open.
+  bash -c, eval, command git commit, git commit inside $(...) or after then/do, and pushd are not
+  seen. Harness behaviour on a hook timeout and concurrent state-file writers are unmeasured.
+
+## 2026-11-04 — the gate takes a bug marker, refuses full and shrunk on the integration branch, logs late declarations
+- **What:** a `full` or `shrunk` commit must carry `Fixes #N` or `Bug: none`, and is refused on the
+  integration branch (`none` and finishing a merge are exempt). The gate logs, and never refuses
+  on, a commit refused with nothing declared or code already changed at a first declaration, in
+  `~/.claude/workflow-late-declarations.jsonl`; the scorecard counts those sessions. `workflow-declare`
+  prints the marker. A later fix keeps a logged file's whole name: a stripped `git status` line
+  logged `app.py` as `pp.py`.
+- **Why:** commit text can't identify bugs, so recurrences can't be counted without a marker. A
+  feature edited through Bash and committed on the integration branch passed both the gate and the
+  audit. Measured since the gate went live: the branch rule flags 1 of 59 commits, and 5 of 21
+  sessions first declared after a commit refusal. The owner approved it in chat.
+- **Limits:** Bash edits stay invisible at edit time, and every rule here fires after the work is
+  done.
+
+## 2026-11-04 — `shrunk` is for fixes only
+- **What:** `dev-workflow.md` no longer sets `shrunk` by size. Fixing something broken whose cause
+  is known shrinks stages 1-3; a feature or redesign takes every stage, however small. No check
+  enforces this: it rests on honest declaration and the audit's other flags.
+- **Why:** 9 of 16 `shrunk` commits since the gate went live changed more than 20 lines outside
+  docs and tests, and no size limit separates a fix from a feature: one feature was 52 lines and a
+  timeout retry 51. The owner chose "Fixes only" over enforcing "a few lines".
+
+## 2026-11-04 — `skip_audit.py` lists workflow skips; scorecard reports bugs and recurrences
+- **What:** new `skip_audit.py`: one `workflow-skip` issue per commit, in that project's own private
+  repo, for a missing `Workflow:` trailer, a `full` trailer whose plan is missing or has no
+  plan-reality-check line, or a `Fixes #N` naming no issue. It dry-runs unless given `--file`. A git
+  or GitHub failure skips the repo with its reason and never reads as clean. `scorecard.py` gains a
+  table of bugs, recurrences, skips and causes per project. New `tests/`.
+- **Why:** the owner wants recurring problems countable per project, and a skip logged even when
+  the agent that skipped says nothing, so a script logs it. The cut-off reads the author date: the
+  first dry run flagged 10 commits written before the gate that a rebase had re-dated.
+- **Limits:** stages 4-9 show only where they leave evidence; a big change declared `shrunk`
+  passes; cause labels are the agent's judgement, so the scorecard lists them for review.
+
 ## 2026-11-04 — debugging dead ends get recorded
 - **What:** stage 8 now says debugging that ends without a fix leaves "tried X, failed because
   Y", two lines at most, as a trap in the project's knowledge docs, or as a memory if the project

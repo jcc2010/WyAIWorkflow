@@ -12,6 +12,28 @@ developer an adoption's effect is read beside the next month's scorecard, never 
 cause; until a reading exists it is judged by feel and by recorded defects in each project's
 knowledge docs.
 
+## 2026-11-05 — github.com/jeonghun917/readfirst and a Reddit post on deterministic bug patterns
+- **Source:** MIT, created 31 Oct 2026, 1 star, a paid tier. The README was read and matched to the
+  post by its content, not a link. Reddit refused the fetch, so the post was not read. Nothing
+  installed or run.
+- **Verdict:** partly adopted. The tool is rejected. The idea "sweep a bug's shape after the fix" is
+  adopted as one stage 4 line, on trial.
+- **Reason:** no written rule covered the sweep, but the evidence is weak: the README's counts come
+  after tuning on the same repos, and 28 of its 62 bugs are low-severity secret comparisons. In the
+  one project checked, the two greppable candidates showed no new bug.
+
+## 2026-11-05 — github.com/globalmpc/backendskills
+- **Source:** MIT, one commit, created 5 Nov 2026 UTC. Read through the GitHub API. Nothing installed
+  or run. Read: `bench/README.md`, the overlay README, parts of `bench/run.sh`,
+  `skills/data-integrity/SKILL.md` and the run table. Not read: its check files, `bench/test/` or any
+  agent diff.
+- **Verdict:** partly adopted. The skills are rejected. The idea "assume a write runs twice at once"
+  is adopted as one stage 6 line, on trial.
+- **Reason:** the skills are Postgres-specific, overlap rules already here and cost more: $20.82
+  against $12.84, 23 turns against 13.5. Its 25 of 150 against 2 of 150 reproduces, but 21 of the 26
+  safety failures across all models are two tasks, 7 of 15 tasks fail nothing in either arm, and only
+  the `with` arm is told the conventions that four tasks check.
+
 ## 2026-11-04 — r/ClaudeWorkflows: "Integrate Playwright MCP with Claude Code for Browser Automation and Persistent Sessions" (Reddit)
 - **Source:** an r/ClaudeWorkflows post, reviewed for one dashboard project only. Original source
   it links to (r/ClaudeCode):

@@ -2,27 +2,27 @@
 
 The default path a feature or bugfix takes, and the skill or agent used at each stage. The
 project's own CLAUDE.md wins wherever it disagrees; its "Workflow" section lists the
-substitutions, and a substitution there replaces whatever a skill here would otherwise do. A
-fix of a few lines with a known cause shrinks stages 1–3 to one sentence in chat naming the fix
-and the test that proves it; everything else takes every stage. Before the first edit, run
+substitutions, and a substitution there replaces whatever a skill here would otherwise do. Fixing
+something broken whose cause is known shrinks stages 1–3 to one sentence in chat naming the fix
+and the test that proves it; everything else, even a small feature or redesign, takes every stage. Before the first edit, run
 `workflow-declare` (full with its plan, shrunk 1–3 with why, or none with why); a hook enforces
 it once installed, dispatches that edit run it first, and each commit ends with the
-Workflow: trailer it prints.
+Workflow: trailer it prints. A full or shrunk commit also carries `Fixes #N` (issue labelled bug, plus cause:<trap name>) or `Bug: none`.
 
 | Stage | Use | Done when |
 |---|---|---|
 | 1. Pick the work | The owner's request, or the project's roadmap | The owner named the task in chat, or it is the next item on the project's roadmap |
 | 2. Shape it | Create the project's worktree first, so the spec commits on its branch, never on main; then `superpowers:brainstorming` | The owner approved the description or the spec |
 | 3. Plan | `superpowers:writing-plans`, then dispatch the `plan-reality-check` agent with the plan path, the checkout and the base ref, and none of your own view of the plan; log its verdict with its plan path (below) | The check's findings are fixed in the plan |
-| 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development` (dispatch per `subagents.md`); a bug starts at `superpowers:systematic-debugging` | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
+| 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development` (dispatch per `subagents.md`); a bug starts at `superpowers:systematic-debugging`. After a fix, grep the repo for the bug's shape; judge every hit; keep a guard test if it can recur. | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
 | 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen; any review agent dispatched here logs its verdict (below) | The project's full suites exited 0, and you have screenshots of visual changes |
-| 6. Review | `code-review` (medium; high for data, auth or money paths), `simplify`; `security-review` for auth, upload, payment or API surface | Every finding is fixed or explicitly declined with a reason |
+| 6. Review | `code-review` (medium; high for data, auth or money paths), `simplify`; `security-review` for auth, upload, payment or API surface. A write that reads first, must be unique, or calls a payment or email service: assume it runs twice at once; test that. | Every finding is fixed or explicitly declined with a reason |
 | 7. Ship | `superpowers:finishing-a-development-branch`, then the project's deploy block (its Workflow section names the substitute where there is none); before a migration on live data or an auth change, give the owner its impact and rollback plan | Deployed and checked live, or the owner chose to hold |
 | 8. Record | The project's knowledge docs or CLAUDE.md, for a trap found or a procedure that will recur; debugging that ends without a fix leaves "tried X, failed because Y" (two lines at most) as a trap, or a memory if the project has none | The lesson lives in one place a later session will read |
 | 9. Retro | `/retro`, typed by the owner at the end of a session; it suggests missing automated checks, CLAUDE.md rules that belong in a check, and wasteful tool calls | Each suggestion applied (a check, a trap or memory, a pruned rule) or declined |
 
 A hook logs plan-reality-check and design-critic verdicts; any other review agent you dispatch
-(a fresh reviewer) gets its verdict logged by you: one line
+gets its verdict logged by you: one line
 `{"date", "agent", "project", "verdict" or "count"}` (plus `"plan"` for plan-reality-check;
 project is the repo directory name) appended to `~/.claude/review-verdicts.jsonl`.
 
@@ -37,8 +37,6 @@ branch, never repo-wide. Never rename a name held outside the repo (bundle or ke
 schemes, tables or stored values, migration filenames, cookie and cache keys, env vars, CLI
 command names) without a planned migration.
 
-Recurring checks: `loop` (this session) or `schedule` (cloud, cron).
-
 Between features: `/improve-codebase-architecture`, typed by the owner monthly or when `/retro`
 keeps flagging the same area (a local scheduled task can run its scan-and-report half on the
 1st). Its report feeds stage 1 and its question rounds are stage 2; the chosen candidate then
@@ -51,15 +49,12 @@ confirmed findings enter stage 1. It is never scheduled.
 
 ## Spend
 
-Run `claude-cost --days N --top N` (reads the local OpenTelemetry log) when the owner asks about
+Run `claude-cost --days N --top N` when the owner asks about
 cost or usage limits. `scorecard.py` takes a monthly reading (cost per commit, churn, new traps,
 review hit rate); judge a workflow change by the next month's reading, never as cause.
 
 ## Session size
 
-From one user's telemetry (three days, late Oct 2026; measure your own before relying on it):
-turns over 400k context cost about 3x a turn under 200k and were 29% of spend, and one 697k
-session alone was 35%. Reads of cached context, not output, were most of the bill.
 - When a context-size nudge fires (a Stop hook at 300k works), finish the current task, then
   suggest `/compact` or a new session for the next one. Mid-task, keep going.
 - Unrelated work starts in a new session; a long one makes every turn re-read context the new

@@ -4,7 +4,8 @@
 Bash `workflow-declare ...`: validate the declaration and record it for this session (and
     subagent, when agent_id is present), keyed by the repo's git common dir.
 Bash `git commit`: refuse a message with no `Workflow:` trailer; refuse `none` on a file `none`
-    does not cover, and `full` or `shrunk` with no declaration of that kind.
+    does not cover, and `full` or `shrunk` with no declaration of that kind, or with neither
+    `Fixes #N` nor `Bug: none`.
 Bash `git stash`, `git add -A`, `git add .`, `git commit -a` from a subagent (agent_id present), in any repo:
     refuse (~/.claude/workflow/subagents.md).
 Edit / Write / NotebookEdit: refuse until the session has declared; refuse full and shrunk on
@@ -13,18 +14,37 @@ Markdown, docs/, ~/.claude and files outside a workflow repo are never gated.
 
 Limit: edits made through Bash (sed -i, heredocs) are not seen; the trailer and
 the scorecard are the check on those, and the commit
-gate checks the trailer against the files the commit takes. Fails open: any error here allows the call."""
-import ast, fcntl, functools, json, os, pathlib, re, shlex, subprocess, sys, tempfile, time
+gate checks the trailer against the files the commit takes. Fails open: any error here allows the call.
+
+Allowed by design, with the audit as the backstop: a commit or declare whose repo can't be worked
+out (cd "$VAR", cd -, git -C "$VAR"); -F - with no heredoc, and -F with an unreadable file. Not seen
+at all: bash -c, eval, command git commit, git commit inside $(...) or after a shell keyword (then,
+do), and pushd. -m "$VAR" is refused: the gate can't read the message."""
+import ast, fcntl, functools, json, os, pathlib, re, shlex, subprocess, sys, tempfile, time, types
 
 HOME = pathlib.Path.home()
 STATE = HOME / ".claude/hooks/state/workflow"
 VERDICTS = HOME / ".claude/review-verdicts.jsonl"
 CHECK_NAMES = HOME / ".claude/workflow/check-names.py"
+LATE = HOME / ".claude/workflow-late-declarations.jsonl"
 TRAILER = re.compile(r"^Workflow: (full \(plan: \S+\)|shrunk [1-3](?:-[1-3])?(?:,[1-3](?:-[1-3])?)* \(.+\)|none \(.+\))\s*$", re.M)
+BUG_MARKER = re.compile(r"^(Fixes #\d+|Bug: none)\s*$", re.M)
 STAGES = re.compile(r"^[1-3](-[1-3])?(,[1-3](-[1-3])?)*$")
 FORMS = ("workflow-declare full --plan <repo-relative plan path>   (plan checked by plan-reality-check, its verdict logged with \"plan\")\n"
          "workflow-declare shrunk 1-3 \"known fix: <one phrase>\"\n"
          "workflow-declare none \"<docs | data | archive | revert | merge>\"")
+
+
+def log_late(data, repo, why, files=()):
+    """One line for work the gate saw before any declaration. Never refuses: a refusal here would
+    teach a session not to declare. The scorecard reads the counts."""
+    try:  # a failed log must not turn the refusal that follows into an allow
+        LATE.parent.mkdir(parents=True, exist_ok=True)
+        with LATE.open("a") as f:
+            f.write(json.dumps({"date": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "project": repo.name, "checkout": str(repo.top),
+                                "session": data.get("session_id", ""), "why": why, "files": list(files)[:10]}) + "\n")
+    except OSError:
+        pass
 
 
 def deny(reason):
@@ -138,43 +158,178 @@ def declaration(data, repo):
 
 
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+REDIRECT = re.compile(r"&?(<<<|<<-|<<|>>|<>|>\||[<>]&?)")
 
 
-def strip_heredocs(command):
-    """The command with heredoc bodies removed, so text inside them is never run as a command."""
-    out, lines, i = [], command.split("\n"), 0
-    while i < len(lines):
-        out.append(lines[i])
-        words = [m.group(2) for m in HEREDOC.finditer(lines[i])]
-        i += 1
-        for word in words:
-            while i < len(lines) and lines[i].strip() != word:
-                i += 1
-            if i < len(lines):
-                out.append(lines[i])  # keep the terminator line: it may carry `)"` and more
-                i += 1
-    return "\n".join(out)
+def heredoc_body(s, i, word, dash):
+    """(body, index after the terminator line) for a heredoc whose body starts at s[i]."""
+    body = []
+    while i < len(s):
+        end = s.find("\n", i)
+        end = len(s) if end < 0 else end
+        line = s[i:end]
+        i = end + 1
+        if (line.lstrip("\t") if dash else line) == word:
+            break
+        body.append(line)
+    return "\n".join(body), min(i, len(s))
+
+
+def substitution_end(s, i):
+    """The index just past the `)` closing a $( or <( whose contents start at s[i]."""
+    depth, pending = 1, []
+    while i < len(s):
+        c = s[i]
+        if c == "\\":
+            i += 2
+        elif c == "'":
+            j = s.find("'", i + 1)
+            i = len(s) if j < 0 else j + 1
+        elif c == '"':
+            i = double_quoted(s, i + 1)[1]
+        elif c == "(":
+            depth, i = depth + 1, i + 1
+        elif c == ")":
+            depth, i = depth - 1, i + 1
+            if not depth:
+                return i
+        elif s.startswith("<<<", i):
+            i += 3
+        elif HEREDOC.match(s, i):
+            m = HEREDOC.match(s, i)
+            pending.append((m.group(2), m.group(0).startswith("<<-")))
+            i = m.end()
+        elif c == "\n":
+            i += 1
+            for word, dash in pending:
+                i = heredoc_body(s, i, word, dash)[1]
+            pending = []
+        else:
+            i += 1
+    return i
+
+
+def double_quoted(s, i):
+    """(value, index past the closing quote) for a double-quoted string whose contents start at s[i].
+    A substitution stays as written, so a heredoc inside one keeps its lines."""
+    out = []
+    while i < len(s) and s[i] != '"':
+        if s[i] == "\\" and i + 1 < len(s):
+            if s[i + 1] != "\n":
+                out.append(s[i + 1] if s[i + 1] in '$`"\\' else s[i:i + 2])
+            i += 2
+        elif s.startswith("$(", i):
+            j = substitution_end(s, i + 2)
+            out.append(s[i:j])
+            i = j
+        else:
+            out.append(s[i])
+            i += 1
+    return "".join(out), i + 1
+
+
+def shell_commands(s):
+    """The simple commands in s, in order, each with .tokens and .stdin (its heredoc and here-string
+    text), with "(" and ")" between them where a subshell opens and closes."""
+    out, cmd, word, target, pending, i = [], types.SimpleNamespace(tokens=[], stdin=[]), None, None, [], 0
+
+    def end_word():
+        nonlocal word, target
+        if word is None:
+            return
+        if target == "here-string":
+            cmd.stdin.append(word)
+        elif target in ("<<", "<<-"):
+            pending.append((word, target == "<<-", cmd))
+        elif target is None:
+            cmd.tokens.append(word)
+        word, target = None, None
+
+    def end_command():
+        nonlocal cmd
+        end_word()
+        if cmd.tokens or cmd.stdin:
+            out.append(cmd)
+        cmd = types.SimpleNamespace(tokens=[], stdin=[])
+
+    while i < len(s):
+        c = s[i]
+        if c == "\\":
+            if s[i + 1:i + 2] != "\n":
+                word = (word or "") + s[i + 1:i + 2]
+            i += 2
+        elif c == "'":
+            j = s.find("'", i + 1)
+            j = len(s) if j < 0 else j
+            word = (word or "") + s[i + 1:j]
+            i = j + 1
+        elif c == '"':
+            text, i = double_quoted(s, i + 1)
+            word = (word or "") + text
+        elif s.startswith(("$(", "<(", ">("), i):
+            j = substitution_end(s, i + 2)
+            word = (word or "") + s[i:j]
+            i = j
+        elif c == "`":
+            j = s.find("`", i + 1)
+            j = len(s) if j < 0 else j + 1
+            word = (word or "") + s[i:j]
+            i = j
+        elif c in " \t":
+            end_word()
+            i += 1
+        elif c == "#" and word is None:
+            j = s.find("\n", i)
+            i = len(s) if j < 0 else j
+        elif c == "\n":
+            end_command()
+            i += 1
+            for delimiter, dash, owner in pending:
+                body, i = heredoc_body(s, i, delimiter, dash)
+                owner.stdin.append(body)
+            pending = []
+        elif REDIRECT.match(s, i) and (c != "&" or s[i + 1:i + 2] == ">"):
+            if word is not None and word.isdigit():  # 2>file: the 2 is not an argument
+                word = None
+            end_word()
+            m = REDIRECT.match(s, i)
+            op = m.group(1)
+            target = "here-string" if op == "<<<" else op if op in ("<<", "<<-") else "drop"
+            i = m.end()
+        elif c in ";|&":
+            end_command()
+            i += 1
+        elif c in "()":
+            end_command()
+            out.append(c)
+            i += 1
+        else:
+            word = (word or "") + c
+            i += 1
+    end_command()
+    return out
 
 
 def segments(command, cwd0):
-    """(tokens, cwd) for each simple command, following `cd` between them."""
-    cwd = cwd0
-    for raw in re.split(r"&&|\|\||;|\||\n", strip_heredocs(command)):
-        try:
-            tokens = shlex.split(raw)
-        except ValueError:  # e.g. the first line of -m "$(cat <<'EOF' ... EOF)"
-            tokens = raw.split()
-        tokens = [t for t in tokens if t not in ("(", "{")]
-        if tokens and tokens[0][:1] in "({":  # (cd x && ...) or { cd x; ... }
-            tokens[0] = tokens[0].lstrip("({")
-        while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):  # FOO=bar cmd
-            tokens = tokens[1:]
-        if not tokens or not tokens[0]:
-            continue
-        if tokens[0] == "cd" and len(tokens) > 1:
-            cwd = resolve(cwd, tokens[1])
-            continue
-        yield tokens, cwd
+    """(command, cwd) for each simple command, following `cd`, and undoing it when a subshell ends.
+    cwd is None once the directory can't be worked out."""
+    cwd, opened = cwd0, []
+    for item in shell_commands(command):
+        if item == "(":
+            opened.append(cwd)
+        elif item == ")":
+            cwd = opened.pop() if opened else cwd
+        else:
+            tokens = item.tokens
+            while tokens and (tokens[0] == "{" or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0])):  # FOO=bar cmd
+                tokens = tokens[1:]
+            if not tokens or not tokens[0]:
+                continue
+            if tokens[0] == "cd":
+                targets = [t for t in tokens[1:] if t == "-" or not t.startswith("-")]
+                cwd = resolve(cwd, targets[0]) if targets else str(HOME)
+                continue
+            yield types.SimpleNamespace(tokens=tokens, stdin=item.stdin), cwd
 
 
 def git_subcommand(tokens):
@@ -193,21 +348,29 @@ def git_subcommand(tokens):
 
 
 def resolve(base, sub):
+    """base/sub, or None when a variable, a substitution, `cd -` or an unknown base hides it."""
     if sub is None:
         return base
+    if sub == "-" or "$" in sub or "`" in sub:
+        return None
     sub = os.path.expanduser(sub)
-    return sub if os.path.isabs(sub) else os.path.join(base, sub)
+    if os.path.isabs(sub):
+        return sub
+    return os.path.join(base, sub) if base else None
 
 
 def on_bash(data):
     command = data.get("tool_input", {}).get("command", "")
     cwd0 = data.get("cwd") or os.getcwd()
-    for tokens, here in segments(command, cwd0):
-        if os.path.basename(tokens[0]) == "workflow-declare":
+    for cmd, here in segments(command, cwd0):
+        tokens = cmd.tokens
+        if os.path.basename(tokens[0]) == "workflow-declare" and here:
             declare(data, tokens[1:], here)
         sub = git_subcommand(tokens)
         if sub and sub[0] == "commit":
-            check_commit(data, command, sub[2], resolve(here, sub[1]))
+            where = resolve(here, sub[1])
+            if where:
+                check_commit(data, cmd, sub[2], where)
         if sub and data.get("agent_id"):
             subagent_git(*sub)
 
@@ -220,7 +383,7 @@ def subagent_git(name, cdir, rest):
     if name == "add" and any(a in ("-A", "--all", ".", "./") for a in rest):
         deny("Subagents never run git add -A or git add .: in a shared checkout they sweep in a "
              "peer's files. Name your paths: git commit <paths>.")
-    if name == "commit" and commit_all(rest):
+    if name == "commit" and commit_options(rest).all:
         deny("Subagents never run git commit -a: it stages every modified tracked file, a "
              "peer's too. Name your paths: git commit <paths>.")
 
@@ -229,31 +392,51 @@ COMMIT_VALUE_SHORT = set("mFcCt")  # -m msg, -F file, ...: the rest of the clust
 COMMIT_VALUE_LONG = {"--message", "--file", "--author", "--date", "--template", "--reuse-message",
                      "--reedit-message", "--fixup", "--squash", "--cleanup", "--trailer",
                      "--pathspec-from-file"}
+REUSE = {"--no-edit", "-C", "-c", "--reuse-message", "--reedit-message", "--fixup", "--squash"}
 
 
-def commit_all(args):
-    """True for git commit -a / --all, alone or in a short cluster (-am); never --amend or --author."""
+def commit_options(args):
+    """What a git commit's arguments say: .all, .paths, .paths_hidden (--pathspec-from-file),
+    .messages (-m), .files (-F), .trailers and .reuse (the message is reused or generated)."""
+    o = types.SimpleNamespace(all=False, paths=[], paths_hidden=False, messages=[], files=[], trailers=[], reuse=False)
+
+    def note(name, value):
+        o.reuse |= name in REUSE
+        o.all |= name == "--all"
+        o.paths_hidden |= name == "--pathspec-from-file"
+        for names, into in ((("-m", "--message"), o.messages), (("-F", "--file"), o.files), (("--trailer",), o.trailers)):
+            if name in names:
+                into.append(value)
+
     i = 0
     while i < len(args):
         a = args[i]
         i += 1
         if a == "--":
-            return False
-        if a == "--all":
-            return True
-        if a in COMMIT_VALUE_LONG:
-            i += 1
-        elif a.startswith("-") and not a.startswith("--"):
+            o.paths += args[i:]
+            break
+        if a.startswith("--"):
+            name, eq, value = a.partition("=")
+            if name in COMMIT_VALUE_LONG and not eq:
+                value = args[i] if i < len(args) else ""
+                i += 1
+            note(name, value)
+        elif a.startswith("-") and len(a) > 1:
             for j, c in enumerate(a[1:], 1):
                 if c == "a":
-                    return True
-                if c in COMMIT_VALUE_SHORT:
-                    if j == len(a) - 1:
-                        i += 1  # value is the next word
+                    o.all = True
+                elif c in COMMIT_VALUE_SHORT:
+                    value = a[j + 1:]
+                    if not value:
+                        value = args[i] if i < len(args) else ""
+                        i += 1
+                    note("-" + c, value)
                     break
-                if c in "uS":  # optional value, attached only
+                elif c in "uS":  # optional value, attached only
                     break
-    return False
+        elif a != "-":
+            o.paths.append(a)
+    return o
 
 
 def declare(data, args, cwd):
@@ -298,82 +481,58 @@ def declare(data, args, cwd):
     STATE.mkdir(parents=True, exist_ok=True)
     with open(STATE / ".lock", "w") as lock:  # parallel declares in one session must not lose one
         fcntl.flock(lock, fcntl.LOCK_EX)
+        first = declaration(data, repo) is None  # under the lock: parallel first declares log once
         state = load(f)
         state[str(repo.common)] = dict(decl, repo=str(repo.common.parent),
                                        at=time.strftime("%Y-%m-%dT%H:%M:%S%z"))
         with tempfile.NamedTemporaryFile("w", dir=STATE, suffix=".tmp", delete=False) as tmp:
             tmp.write(json.dumps(state, indent=1))
         os.replace(tmp.name, f)
+    if first:  # after the state is written, so a killed hook can't lose a declaration
+        log_changed_code(data, repo)
 
 
-def commit_paths(args):
-    """The pathspecs a git commit names, or None if --pathspec-from-file hides them."""
-    paths, i = [], 0
-    while i < len(args):
-        a = args[i]
-        i += 1
-        if a == "--":
-            return paths + args[i:]
-        if a == "--pathspec-from-file" or a.startswith("--pathspec-from-file="):
-            return None
-        if a in COMMIT_VALUE_LONG:
-            i += 1
-        elif a.startswith("-") and not a.startswith("--") and len(a) > 1:
-            for j, c in enumerate(a[1:], 1):
-                if c in COMMIT_VALUE_SHORT:
-                    if j == len(a) - 1:
-                        i += 1
-                    break
-                if c in "uS":
-                    break
-        elif not a.startswith("-"):
-            paths.append(a)
-    return paths
-
-
-def whole_commit_args(command):
-    """The args of the one git commit in command, parsed whole: a quoted multi-line -m spans the
-    segments segments() splits on, and a pathspec after it would be lost. None if not exactly one."""
-    try:
-        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
-        lex.whitespace_split = True
-        tokens = list(lex)
-    except ValueError:
-        return None
-    found, run = [], []
-    for t in tokens + [";"]:
-        if t and set(t) <= set("();<>|&"):  # an operator or redirection ends the simple command
-            sub = git_subcommand(run) if run else None
-            if sub and sub[0] == "commit":
-                found.append(sub[2])
-            run = []
-        else:
-            run.append(t)
-    return found[0] if len(found) == 1 else None
+def log_changed_code(data, repo):
+    """Code already changed at a first declaration: a peer's in a shared checkout, so only logged.
+    -z because git() strips a first line's leading status space; every untracked file, because a
+    new folder otherwise reads as one path. Status never lists ignored files, so no check-ignore."""
+    status = subprocess.run(["git", "--no-optional-locks", "-C", str(repo.top), "status", "--porcelain", "-z",
+                             "--no-renames", "--untracked-files=all"],
+                            capture_output=True, text=True, errors="replace").stdout
+    dirty = [entry[3:] for entry in status.split("\0") if entry and not free_path(entry[3:])]
+    if dirty:
+        log_late(data, repo, "code already changed at the first declaration", dirty)
 
 
 def committed_files(args, cwd):
     """Repo-relative files the commit takes, or None when git can't say (fail open)."""
-    paths = commit_paths(args)
-    if paths is None:
+    options = commit_options(args)
+    paths = options.paths
+    if options.paths_hidden:
         return None
     if paths:
         out = git(cwd, "diff", "--name-only", "--no-relative", "HEAD", "--", *paths)
         if out is not None and any(a in ("-i", "--include") for a in args):
             staged = git(cwd, "diff", "--cached", "--name-only", "--no-relative")
             out = None if staged is None else out + "\n" + staged
-    elif commit_all(args):
+    elif options.all:
         out = git(cwd, "diff", "--name-only", "--no-relative", "HEAD")
     else:
         out = git(cwd, "diff", "--cached", "--name-only", "--no-relative")
     return None if out is None else sorted({f for f in out.splitlines() if f})
 
 
+def free_path(rel):
+    """Markdown or docs/: never needs a declaration."""
+    rel = rel.replace(os.sep, "/")
+    return rel.lower().endswith((".md", ".markdown")) or rel.split("/")[0] == "docs"
+
+
 def none_covers(repo, rel, data=True):
     """True if a `none` declaration covers rel: Markdown, docs/, gitignored, and (data=True) the
     project's data paths. on_edit() uses data=False for the files that need no declaration."""
     rel = rel.replace(os.sep, "/")
-    if rel.lower().endswith((".md", ".markdown")) or rel.split("/")[0] == "docs":
+    if free_path(rel):
         return True
     if git(repo.top, "check-ignore", "-q", "--", rel) is not None:  # .env, local config: not repo work
         return True
@@ -389,30 +548,32 @@ def trailer_for(decl):
     return f"Workflow: none ({decl['why']})"
 
 
-def check_commit(data, command, args, cwd):
-    reuse = ("--no-edit", "-C", "-c", "--fixup", "--squash", "--reuse-message", "--reedit-message")
-    if any(a in reuse or a.startswith(("--fixup=", "--squash=", "--reuse-message=", "--reedit-message="))
-           for a in args):  # the message is reused or generated, not written here
-        return
+def check_commit(data, cmd, args, cwd):
+    options = commit_options(args)
+    if options.reuse and not options.messages and not options.files:
+        return  # the message is reused or generated, not written here
     repo = Repo.of(cwd)
     if repo is None:
         return
-    message = command
-    for i, a in enumerate(args):
-        f = args[i + 1] if a in ("-F", "--file") and i + 1 < len(args) else (a[7:] if a.startswith("--file=") else None)
-        if f and f != "-":
-            try:
-                message += "\n" + pathlib.Path(resolve(cwd, f)).read_text(errors="replace")
-            except OSError:
-                return  # can't read it: fail open
-    try:  # a quoted multi-line -m message is one token of the whole command
-        whole = shlex.split(command)
-    except ValueError:
-        whole = []
-    attached = [a[2:] for a in args if a.startswith("-m") and len(a) > 2]  # -m"..."
+    message = options.messages + options.trailers  # only what becomes this commit's message counts
+    for f in options.files:
+        if f == "-":
+            if not cmd.stdin:  # piped: can't read it, fail open
+                return
+            message += cmd.stdin
+            continue
+        path = resolve(cwd, f)
+        if path is None:
+            return
+        try:
+            message.append(pathlib.Path(path).read_text(errors="replace"))
+        except OSError:
+            return  # can't read it: fail open
     decl = declaration(data, repo)
-    found = next((m for t in [message, *args, *whole, *attached] for m in [TRAILER.search(t)] if m), None)
+    found = next((m for t in message for m in [TRAILER.search(t)] if m), None)
     if not found:  # never show a trailer template: a session that copies one skips the declaration
+        if not decl:
+            log_late(data, repo, "commit refused: nothing declared")
         if decl:
             deny("Refused: this repo follows ~/.claude/workflow/dev-workflow.md, so the commit message ends with "
                  "the trailer workflow-declare printed for it, on its own line:\n" + trailer_for(decl))
@@ -421,18 +582,32 @@ def check_commit(data, command, args, cwd):
              "trailer it prints:\n" + FORMS)
     kind = found.group(1).split()[0]
     if kind == "none":
-        files = committed_files(whole_commit_args(command) or args, cwd)
+        files = committed_files(args, cwd)
         code = [f for f in files or [] if not none_covers(repo, f)]
         if code:
             deny("Refused: the trailer says none, which covers Markdown, docs/, gitignored files and the "
                  "project's data paths, but this commit takes " + ", ".join(code[:10])
                  + (f" and {len(code) - 10} more" if len(code) > 10 else "")
-                 + ". For code, declare shrunk 1-3 or full, and use the trailer it prints:\n" + FORMS)
+                 + ". For code, declare full, or shrunk 1-3 for a known fix, and use the trailer it prints:\n" + FORMS)
         return
+    if not decl:
+        log_late(data, repo, "commit refused: nothing declared")
     if not decl or decl.get("kind") != kind:
         had = f"the declaration here is {decl['kind']}" if decl else "nothing was declared here"
         deny(f"Refused: the trailer says {kind}, but {had}. Declare it from inside {repo.top} and use "
              "the trailer it prints:\n" + FORMS)
+    finishing = any(git(repo.top, "rev-parse", "-q", "--verify", h) is not None
+                    for h in ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD"))  # the work was done elsewhere
+    if repo.on_integration() and not finishing:
+        deny(f"Refused: stage 2 says work in a worktree branch, and {repo.top} is on the integration "
+             "branch. Move this work to one (the project's CLAUDE.md names the command), commit there, "
+             "and land it the way the project's stage 7 says. Only none commits go straight here.")
+    # After the declaration checks, so a session that hasn't declared never sees this. The audit,
+    # not this hook, checks that #N exists: no network call here.
+    if not any(BUG_MARKER.search(t) for t in message):
+        deny("Refused: a full or shrunk commit also says whether it fixes a bug, on a line of its own: "
+             "Fixes #N, naming the issue (labels: bug, and cause:<trap name> where the project has one), "
+             "or Bug: none when it fixes no bug.")
 
 
 def on_edit(data):
@@ -457,7 +632,7 @@ def on_edit(data):
     if decl["kind"] == "none":
         if not none_covers(repo, rel):
             deny(f"Refused: declared none ({decl.get('why')}), which covers Markdown, docs/ and the "
-                 "data paths the project's Workflow section lists. For code, declare full or shrunk 1-3.")
+                 "data paths the project's Workflow section lists. For code, declare full, or shrunk 1-3 for a known fix.")
         return
     if repo.on_integration():
         deny(f"Refused: stage 2 says work in a worktree branch, and {repo.top} is on the integration "
