@@ -272,6 +272,13 @@ class Main(unittest.TestCase):
 
 
 class Scorecard(unittest.TestCase):
+    def test_red_run_reads_how_commits_write_it(self):
+        for text in ("Red run:", "Red runs: x", "red-run", "red run", "FAIL  Tests\\X", "FAILED (failures=1)",
+                     "FAILED tests/a.py::t", "FAILURES!", "Failed asserting that", "failed as expected", "Tests:  1 failed, 2 passed"):
+            self.assertTrue(scorecard.RED_RUN.search(text), text)
+        for text in ("must fail closed", "a credit run", "the failure", "tests that fail under it", "FAILURE", "Fred run"):
+            self.assertFalse(scorecard.RED_RUN.search(text), text)
+
     def test_slug_from_each_remote_form(self):
         for url in ("https://github.com/o/p.git", "git@github.com:o/p.git", "https://github.com/o/p"):
             with mock.patch.object(scorecard, "git", return_value=url + "\n"):

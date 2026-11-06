@@ -6,6 +6,14 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-06 — scorecard: the red-run pattern reads how commits write it
+- **What:** `RED_RUN` now matches `Red run`, `Red runs`, `red-run` and `Failed asserting` in any case.
+  `FAIL` and `FAILED` stay case-sensitive and whole-word, and PHPUnit's `FAILURES!` still matches.
+- **Why:** the old pattern was case-sensitive, so `Red run:` never matched. The largest project read
+  0 of 60 for November, which looks like stage 4 being skipped; it now reads 13 of 60.
+- **Limits:** still a grep, counting commits that say so. It does not show the others skipped a red
+  run. False hits were checked only on one month's commits and the test's strings.
+
 ## 2026-11-05 — stage 4: sweep a bug's shape after the fix (trial)
 - **What:** one line in stage 4: after a fix, grep the repo for the bug's shape, judge every hit,
   keep a guard test if it can recur.

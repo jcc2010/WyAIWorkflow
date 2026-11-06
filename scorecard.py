@@ -135,7 +135,7 @@ def new_traps(repo, ref, start, end):
 
 
 TRAILER = re.compile(r"^Workflow: (full \(plan: (\S+)\)|shrunk [1-3](?:-[1-3])?(?:,[1-3](?:-[1-3])?)* \(.+\)|none \(.+\))\s*$", re.M)
-RED_RUN = re.compile(r"red run|FAIL|failed as expected|Tests: .*failed")
+RED_RUN = re.compile(r"(?i:\bred[- ]runs?\b|failed as expected|failed asserting)|\bFAIL(?:ED)?\b|FAILURES!|Tests: .*failed")
 
 
 def plan_key(path):
