@@ -27,7 +27,7 @@ Point to logs by path; never paste them.
 
 ## 3. Check the return before you trust it
 The agent returns the fixed report: status (PASS, UNVERIFIED, BLOCKED or FAILED), changes,
-checks (each command with its exit code), red run, blockers. PASS needs a check that ran.
+checks (each command with its exit code), red run, tried (approaches dropped, and why), blockers. PASS needs a check that ran.
 Then:
 - read the trailers with `git log -1 --format=%B`;
 - compare `git diff --stat <base>` with the files in scope;

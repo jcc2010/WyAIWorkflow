@@ -6,6 +6,34 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-12 — implementer report: a tried line
+- **What:** the implementer's fixed report gains `tried: <each approach tried and dropped, one line
+  each with why, or none>` after the red run, and subagents.md names it among the checks on return.
+- **Why:** the owner approved it so the reviewer and the next task see dead ends without walking
+  them again. The idea came from another workflow tool's per-item receipts.
+- **Limits:** nothing checks that the line is filled in honestly.
+
+## 2026-11-11 — refuse-secret-print hook
+- **What:** a PreToolUse hook on Bash and Read that refuses a call that would print a secret value
+  into the transcript. Filters by full non-secret key names, key names only and redacted output
+  still pass. Its cases are in `tests/secret_print_cases.py`.
+- **Why:** the owner approved it after a 30-day replay of local transcripts found 36 refusals in
+  63,357 Bash and Read calls. About 14 would have printed a secret, one of them on a production
+  server.
+- **Limits:** about 22 refusals a month are friction (a bare word or a prefix grep), and the
+  refusal says how to rewrite. Not covered: a script that reads `.env` and prints it, a framework
+  console printing config, and a secret in a tool's own error output.
+
+## 2026-11-11 — refuse-unguarded-rm hook
+- **What:** a PreToolUse Bash hook that refuses a recursive `rm` of a variable without `:?`, or of
+  the current directory, home or root, and says to write `"${VAR:?}/..."`. Heredoc bodies are
+  skipped unless they feed bash, sh, zsh or ssh, and a here-string is not taken for a heredoc.
+- **Why:** the owner approved it after 30 days of local transcripts showed 248 recursive rm calls
+  with a variable target and none using `:?`. Nothing deterministic blocked them.
+- **Limits:** the 30-day replay gave 222 refusals once heredoc bodies were skipped. An rm inside a
+  quoted string is still refused. `find -delete`, `xargs rm`, rm in a script and `eval` are not
+  covered.
+
 ## 2026-11-06 — scorecard: the red-run pattern reads how commits write it
 - **What:** `RED_RUN` now matches `Red run`, `Red runs`, `red-run` and `Failed asserting` in any case.
   `FAIL` and `FAILED` stay case-sensitive and whole-word, and PHPUnit's `FAILURES!` still matches.

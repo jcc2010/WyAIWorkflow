@@ -1,6 +1,6 @@
 ---
 name: implementer
-description: Writes code for one task of a plan, test first, in the checkout and branch the brief names. Dispatch it for any code-writing step, including the implementer step of superpowers:subagent-driven-development. Give it the goal, the checkout and branch, the files in scope, what is ruled out, the acceptance command, and the Co-Authored-By and Workflow: trailer lines verbatim. Returns a fixed report (status, changes, checks, red run, blockers).
+description: Writes code for one task of a plan, test first, in the checkout and branch the brief names. Dispatch it for any code-writing step, including the implementer step of superpowers:subagent-driven-development. Give it the goal, the checkout and branch, the files in scope, what is ruled out, the acceptance command, and the Co-Authored-By and Workflow: trailer lines verbatim. Returns a fixed report (status, changes, checks, red run, tried, blockers).
 model: opus
 ---
 
@@ -27,6 +27,8 @@ the caller must know:
     changes: <paths changed>
     checks: <each command run> -> exit <code>
     red_run: <the failing test output, quoted>
+    tried: <each approach tried and dropped, one line each with why, or none>
     blockers: <what stopped you, or none>
 
 PASS needs a check that ran and exited 0. A check you did not run is UNVERIFIED, not PASS.
+List dead ends under `tried` so the reviewer and the next task do not walk them again.

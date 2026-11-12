@@ -22,11 +22,13 @@ discussion for ideas and questions.
 | [`tests/`](tests) | `GATE=hooks/workflow-gate.py python3 -m unittest discover -s tests`: no network. |
 | [`bin/claude-cost`](bin/claude-cost) | Where Claude Code spend goes, from a local OpenTelemetry event log: by project, by agent and model, by context size, and cache rebuilds after idle gaps. Put it on your `PATH`; `scorecard.py` uses it. |
 | [`agents/general-purpose.md`](agents/general-purpose.md) | Overrides the built-in general-purpose subagent: defaults to Sonnet (pass model "opus" per dispatch to review data, auth or money paths), carries the git and deploy rules a subagent must follow, and returns a fixed report (status, changes, checks with exit codes, blockers). |
-| [`agents/implementer.md`](agents/implementer.md) | A subagent pinned to Opus that writes code for one task, test first, and returns the same fixed report plus the red run. |
+| [`agents/implementer.md`](agents/implementer.md) | A subagent pinned to Opus that writes code for one task, test first, and returns the same fixed report plus the red run and the approaches it tried and dropped. |
 | [`agents/plan-reality-check.md`](agents/plan-reality-check.md) | A read-only subagent that checks a written plan against the code before anyone builds it: references that don't exist, claims the code contradicts, helpers that duplicate existing ones. |
 | [`bin/workflow-declare`](bin/workflow-declare) | Declares a session's path before its first edit (`full` with a plan, `shrunk 1-3` with a reason, or `none` with a reason) and prints the `Workflow:` trailer each commit ends with. Put it on your `PATH`. |
 | [`hooks/workflow-gate.py`](hooks/workflow-gate.py) | A PreToolUse hook: records declarations, refuses an edit before one, refuses a commit whose trailer doesn't match its files or that lacks a bug marker, refuses `full` and `shrunk` on the integration branch, logs late declarations, and refuses a subagent's `git stash`, `git add -A` / `.` and `git commit -a`. Fails open. |
 | [`hooks/log-review-verdict.py`](hooks/log-review-verdict.py) | A SubagentStop hook that logs `plan-reality-check` and design-critic verdicts to `~/.claude/review-verdicts.jsonl`, which `scorecard.py` reads. |
+| [`hooks/refuse-unguarded-rm.py`](hooks/refuse-unguarded-rm.py) | A PreToolUse Bash hook that refuses a recursive `rm` of a variable without `:?` (an empty variable would delete from the current directory), or of `.`, `..`, `/`, `~`, `*`, `$HOME` or `$PWD`, and says to write `"${VAR:?}/..."`. Heredoc bodies are skipped unless they feed a shell. A backstop: `find -delete`, `xargs rm` and rm inside a script are not covered. |
+| [`hooks/refuse-secret-print.py`](hooks/refuse-secret-print.py) | A PreToolUse hook on Bash and Read that refuses a call that would print a secret into the transcript: reading or grepping a `.env` file, bare `env`/`printenv`, a private key file, `security ... -w` or `gh auth token` outside `$(...)`. Filters by full non-secret key names, key names only, redacted values, `grep -q/-c`, `sed -i` and output to a file still pass. Fails open. Cases: `python3 -I tests/secret_print_cases.py hooks/refuse-secret-print.py`. |
 
 ## How it's wired
 
@@ -43,9 +45,10 @@ discussion for ideas and questions.
   List only what differs from the shared file, or what a project rule already forbids (for
   example, a skill that would merge to main locally in a repo that only integrates by push). A
   line that repeats a rule already stated elsewhere in the same `CLAUDE.md` is noise.
-- The two hooks and `workflow-declare` are optional. Put `workflow-declare` on your `PATH`, copy
+- The hooks and `workflow-declare` are optional. Put `workflow-declare` on your `PATH`, copy
   the hooks under `~/.claude/hooks/`, and wire them in `~/.claude/settings.json` (PreToolUse for
-  the gate, SubagentStop for the verdict log). The wiring isn't published, and until it exists
+  the gate and the rm guard with matcher `Bash`, PreToolUse with matcher `Bash|Read` for the
+  secret guard, SubagentStop for the verdict log). The wiring isn't published, and until it exists
   the declaration and trailer rules rest on the agent following them.
 - `check-names.py` runs before and after every edit to either file. It also holds `dev-workflow.md` to
   100 lines and 1,300 words, so a new rule means deleting or merging an old one.
