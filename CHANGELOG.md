@@ -6,6 +6,26 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-20 — Sync: worktree isolation, session size, Opus only for judgment, checks for traps
+- **What:**
+  - Worktrees: where `core.hooksPath` is relative, no `isolation: "worktree"` subagents; after an
+    isolated run, check `git config core.hooksPath` and set it back if it became absolute.
+  - Session size: offer "Compact now" when a turn ends above about 150k context; batch messages to a
+    session idle an hour or more; unrelated work starts fresh, above all after an idle hour; read
+    files narrowly in Bash (`grep -n`, then `sed -n`; `diff --stat` before a full diff).
+  - Spend: pass `model: opus` to general-purpose only for review, design or diagnosis.
+  - Stage 8: a trap a grep or test can catch gets that check.
+  - Legacy names: App Group ids and config keys are held outside the repo too.
+  - Wording trimmed elsewhere to stay within 1,300 words.
+- **Why:**
+  - Worktrees: in the one repo where worktree-isolated subagents had run, a relative hooks path set
+    by hand was found absolute, so every worktree ran the main checkout's hooks. This matches a
+    public report about Claude Code. It is a correlation, not reproduced.
+  - Session size: rebuilding a large context after an idle gap was the largest avoidable cost
+    measured, and whole-file reads were re-read on every later turn.
+  - Spend: Sonnet does the rest of the general-purpose work at a lower cost.
+  - Stage 8: prose traps are missed; a check is not.
+
 ## 2026-11-12 — implementer report: a tried line
 - **What:** the implementer's fixed report gains `tried: <each approach tried and dropped, one line
   each with why, or none>` after the red run, and subagents.md names it among the checks on return.
