@@ -6,6 +6,18 @@ monthly deletion pass reads this file to find rules whose reason no longer appli
 
 This public copy starts at its first sync; earlier history lives in the private source repo.
 
+## 2026-11-21 — Sync: /interface-review in stage 5 for link, route and flow changes
+- **What:** stage 5 runs `/interface-review` on the diff after the on-screen check when a change
+  alters a link, route or flow between pages, not for CSS-only changes. The skill is
+  [jakubkrehel/skills](https://github.com/jakubkrehel/skills) `interface-review` with
+  `better-interface`, installed user-scope and unchanged; the `better-*` domain skills are not
+  installed. Wording trimmed elsewhere to stay within 1,300 words.
+- **Why:** a read-only trial on 3 UI commits that the screenshot-based design critic had already
+  passed. On one, interface-review found a MEDIUM regression the critic missed: a page reached by
+  a new route had lost its way back. A screenshot shows one page; the regression was in the path
+  between two. Two more real LOW findings on the other commits.
+- **Reconsider if:** in the next 10 flow-changing commits it finds nothing the critic missed.
+
 ## 2026-11-20 — Sync: worktree isolation, session size, Opus only for judgment, checks for traps
 - **What:**
   - Worktrees: where `core.hooksPath` is relative, no `isolation: "worktree"` subagents; after an

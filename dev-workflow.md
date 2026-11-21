@@ -15,7 +15,7 @@ Workflow: trailer it prints. A full or shrunk commit also carries `Fixes #N` (is
 | 2. Shape it | Create the project's worktree first, so the spec commits on its branch, never on main; then `superpowers:brainstorming` | The owner approved the description or the spec |
 | 3. Plan | `superpowers:writing-plans`, then dispatch the `plan-reality-check` agent with the plan path, the checkout and the base ref, and none of your own view of the plan; log its verdict with its plan path (below) | The check's findings are fixed in the plan |
 | 4. Build | `superpowers:subagent-driven-development` (or `superpowers:executing-plans` inline) with `superpowers:test-driven-development` (dispatch per `subagents.md`); a bug starts at `superpowers:systematic-debugging`. After a fix, grep the repo for the bug's shape; judge every hit; keep a guard test if it can recur. | Every plan task is checked off, and its failing test's output (the red run) is quoted in the task's commit message |
-| 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen; any review agent dispatched here logs its verdict (below) | The project's full suites exited 0, and you have screenshots of visual changes |
+| 5. Verify | `superpowers:verification-before-completion`; `run` or the browser/simulator for anything on screen, then `/interface-review` on the diff when a link, route or page flow changes (not CSS-only); any review agent dispatched here logs its verdict (below) | The project's full suites exited 0, and you have screenshots of visual changes |
 | 6. Review | `code-review` (medium; high for data, auth or money paths), `simplify`; `security-review` for auth, upload, payment or API surface. A write that reads first, must be unique, or calls a payment or email service: assume it runs twice at once; test that. | Every finding is fixed or explicitly declined with a reason |
 | 7. Ship | `superpowers:finishing-a-development-branch`, then the project's deploy block (its Workflow section names the substitute where there is none); before a migration on live data or an auth change, give the owner its impact and rollback plan | Deployed and checked live, or the owner chose to hold |
 | 8. Record | The project's knowledge docs or CLAUDE.md, for a trap found or a procedure that will recur; a trap a grep or test can catch gets that check, named in the trap (prose is for what no check sees); debugging that ends without a fix leaves "tried X, failed because Y" (two lines at most) as a trap, or a memory if the project has none | The lesson lives in one place a later session will read |
@@ -78,13 +78,12 @@ Any change to this repo adds a `CHANGELOG.md` entry in the same commit, with a r
 
 Evaluate a new skill or plugin against this file before using it:
 
-1. Run `python3 check-names.py` (exit 0 before you change anything). Read the
+1. Run `python3 check-names.py` (exit 0 before any change). Read the
    new skill's `SKILL.md` (or the plugin's skill list) and name the stage it serves.
 2. Decide: **add** (a stage gains a tool it lacked), **substitute** (it does an existing entry's
    job better; say what it does better), or **leave out** (overlaps without improving, or needs a
    connector the owner won't connect). A cost or optimizer plugin is measured first: run
    `claude-cost --days 7` and check its claims against these numbers.
-3. Check every project's "Workflow" section for a conflict, e.g. a skill running
-   `git worktree add` where a project has its own worktree script.
+3. Check every project's "Workflow" section for a conflict.
 4. Propose the edit to this file and any project section; apply it once the owner agrees, rerun
    `check-names.py`, and commit with its `CHANGELOG.md` entry.
